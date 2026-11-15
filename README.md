@@ -2,9 +2,13 @@
 
 A web editor for the BOSS WAZA-AIR wireless guitar headphones.
 
+### [Open WazaMate](https://peanutismint.github.io/WazaMate/)
+
 Open one page in your browser, connect over Bluetooth, and get at every amp,
 effect and setting the headphones have, laid out as a signal chain you can click
 through. No app store, no install, no account.
+
+![The WazaMate editor, showing the signal chain across the top and the Brown amp open below it](docs/screenshot.png)
 
 WazaMate is a single HTML file. Everything runs in your browser, on your own
 machine. Nothing is uploaded anywhere, there is no server, and there is nobody
@@ -26,6 +30,8 @@ spinning reels. Switch the amp to Brown and the amp changes to match. The
 controls are the ones Roland's own editor exposes, grouped the way the gear
 would be.
 
+![The tape echo delay, drawn as a tape machine with reels, heads and a cream control panel](docs/screenshot-delay.png)
+
 **A preset library the headphones do not have.** The headphones hold six
 memories. WazaMate lets you keep as many presets as you like in your browser,
 load any of them instantly, and store the one you want into any of the six
@@ -39,8 +45,13 @@ and the screen follows. Turn your head and the ambience view turns with you.
 
 ## Getting started
 
-Open `index.html` in Chrome or Edge on a desktop, or visit the hosted page if
-you are using one. Press **Connect headphones** and pick WAZA-AIR MIDI.
+Go to **[wazamate](https://peanutismint.github.io/WazaMate/)** in Chrome or Edge
+on a desktop, press **Connect headphones**, and pick WAZA-AIR MIDI. That is the
+whole setup.
+
+If you would rather keep a copy, download `index.html` from this repository and
+open it from your own machine. It works exactly the same, with one catch covered
+under presets below.
 
 Without a connection everything still works in preview mode, so you can build
 and export presets with the headphones switched off.
@@ -48,6 +59,8 @@ and export presets with the headphones switched off.
 ### Browser support
 
 Web Bluetooth is what makes this work, and not every browser has it.
+
+<img src="docs/screenshot-phone.png" alt="WazaMate on a phone, with the chain wrapped onto two rows" width="290" align="right">
 
 | Where | Works |
 | --- | --- |
@@ -61,6 +74,11 @@ browser on iOS, and that is not something this project can work around. The
 editor, the preset library and import and export all work fine on an iPhone, you
 just cannot talk to the headphones. Third party browsers such as Bluefy add Web
 Bluetooth on iOS and may work, but that is untested here.
+
+The layout folds down for small screens, so an Android phone is a perfectly good
+way to use it.
+
+<br clear="right">
 
 ### If Windows refuses to connect
 
@@ -86,8 +104,9 @@ Presets are saved in your browser's local storage for this page. That means:
   is usually what does it, and browsers often clear it without making a fuss.
 - They belong to one browser on one machine. Presets made in Chrome will not
   appear in Edge, or on your laptop.
-- Opening the file from a different folder or under a different name can leave
-  the old presets behind.
+- If you run WazaMate from a downloaded file rather than the website, moving or
+  renaming that file can leave the old presets behind. The website address stays
+  put, so presets made there survive every update.
 
 **So export your library.** Preset menu, **Export whole library**, and keep the
 file somewhere safe. It takes two seconds and it is the only real backup there
