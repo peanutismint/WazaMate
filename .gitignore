@@ -1,0 +1,27 @@
+# Keep app source and the built index.html. Everything below is local clutter.
+
+# Roland's app, if you unpack a copy here to regenerate the schema.
+# Do not commit it.
+*.apk
+*.xapk
+app/
+xapk/
+
+# Exported preset libraries and session logs from testing
+*.wazamate.json
+*.log
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node, if you ever add tooling that needs it
+node_modules/
