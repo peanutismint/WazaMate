@@ -1,0 +1,35 @@
+name: Build
+
+# Checks that index.html matches src/ and that the message encoding still
+# matches what real headphones expect. Nothing here deploys anything.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: index.html is up to date with src/
+        run: python3 build.py --check
+
+      - name: Message encoding matches hardware captures
+        run: node tools/test.js
+
+      - name: Keep the built page as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wazamate
+          path: index.html
