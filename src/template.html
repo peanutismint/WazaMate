@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WazaMate</title>
+<style>
+/*__CSS__*/
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand">WazaMate<small>v0.8</small></div>
+  <div class="patches" id="patches" role="group" aria-label="Patch"></div>
+  <div class="grow"></div>
+  <span class="chip preview" id="sync"><b></b><span></span></span>
+  <label class="switch toolonly" title="Lets untested controls send to the headphones"><input type="checkbox" id="test">Test mode</label>
+  <button class="btn" id="readbtn" type="button" hidden title="Ask the headphones for their current settings">Read state</button>
+  <button class="btn" id="hs" type="button" hidden title="Send the two CONNECT messages again">Send CONNECT</button>
+  <button class="btn ic" id="sysbtn" type="button" data-ic="gear" aria-label="System settings" title="System settings"><span class="lbl">System</span></button>
+  <details class="menu" id="adv"><summary class="btn ic" data-ic="tools" aria-label="Advanced" title="Advanced"><span class="lbl">Advanced</span></summary>
+    <div class="menu-body"><label class="switch"><input type="checkbox" id="tools">Testing tools</label>
+    <p>Shows the MIDI log, test marks on every control, Test mode, Send CONNECT and Read state.</p></div>
+  </details>
+  <button class="btn mute ic" id="mute" type="button" data-ic="mute" aria-pressed="false" aria-label="Mute" title="Mute"><span class="lbl">Mute</span></button>
+  <button class="btn primary ic" id="connect" type="button" data-ic="bt" aria-label="Connect headphones" title="Connect headphones"><span class="lbl">Connect headphones</span></button>
+</header>
+<section class="lcd" aria-label="Signal chain">
+  <div class="lcd-head">
+    <span class="lcd-num" id="lcdnum"></span><span class="lcd-name" id="lcdname"></span>
+    <div class="grow"></div>
+    <div class="libbar">
+      <select id="preset" aria-label="Preset library" title="Load a preset from your library"></select>
+      <button class="btn sm ic only" id="psave" type="button" data-ic="save" aria-label="Save preset" title="Save the current sound over the selected preset, or as a new one"></button>
+      <details class="menu" id="pmenu"><summary class="btn sm ic only" data-ic="dots" aria-label="Preset actions" title="Preset actions"></summary>
+        <div class="menu-body list">
+          <button type="button" id="pnew" data-ic="plus">New from current sound</button><button type="button" id="pdup" data-ic="copy">Duplicate</button><button type="button" id="pren" data-ic="edit">Rename</button><button type="button" id="pdel" data-ic="trash">Delete</button>
+          <hr><button type="button" id="pimp" data-ic="imp">Import file</button><button type="button" id="pexp" data-ic="exp">Export this preset</button><button type="button" id="pexpall" data-ic="exp">Export whole library</button>
+        </div>
+      </details>
+      <details class="menu" id="smenu"><summary class="btn sm ic only" data-ic="store" aria-label="Store in a headphone memory" title="Store the current sound in a headphone memory"></summary>
+        <div class="menu-body list" id="slist"></div>
+      </details>
+      <input type="file" id="pfile" accept=".json,application/json" hidden>
+    </div>
+    <label class="ctl" id="chainlab"><span class="lbl">Chain order</span> <select id="chainsel" aria-label="Chain order" title="Chain order"></select></label>
+  </div>
+  <div class="path" id="path"></div>
+</section>
+<main class="stage">
+  <div class="stage-main" id="main"></div>
+  <aside class="side" id="side"></aside>
+</main>
+<details class="logbar" id="logbar">
+  <summary>MIDI log <span id="lastlog"></span></summary>
+  <div class="logtools">
+    <input id="raw" placeholder="Hex bytes. Full message, or address + data for a DT1" aria-label="Raw hex bytes">
+    <button class="btn" id="senddt1" type="button">Send as DT1</button>
+    <button class="btn" id="sendraw" type="button">Send as typed</button>
+    <button class="btn" id="copylog" type="button">Copy log</button>
+    <button class="btn" id="copymarks" type="button">Copy test results</button>
+  </div>
+  <div id="log"></div>
+</details>
+<div class="toast" id="toast" role="status"></div>
+<script>
+/*__JS__*/
+</script>
+</body>
+</html>
