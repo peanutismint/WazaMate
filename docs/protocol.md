@@ -162,6 +162,17 @@ several times a second as you turn your head. The value runs 0 to 119 and wraps,
 which works out at 3 degrees per step for a full circle, although that step size
 is inferred from the wrap rather than documented.
 
+### Battery and tuner
+
+**Confirmed.** A plain read of `7F 00 05 02`, which Roland's app calls
+`batteryState`, gets no answer at all.
+
+That same constants file lists running-mode values `batteryState: 3` and
+`monoTuner: 1`, in the enum whose other value we already use when the handshake
+writes `00` to running mode `7F 00 00 02`. The likely explanation is that the
+headphones report battery level and tuner pitch only while in those modes, not
+on demand. Untested.
+
 ### Addresses missing from Roland's map
 
 **Confirmed** by observation, meaning unclear. Writing an amp knob also produces
@@ -179,8 +190,9 @@ per amp type.
 
 ## Storing a patch
 
-**Unconfirmed on hardware.** Taken from Roland's editor, which writes the name
-into the edit buffer and then issues a store command:
+**Confirmed.** Memory 1 was overwritten this way on 2026-11-16 and read back with
+its new name. The sequence is Roland's own: write the name into the edit buffer,
+then issue the store command.
 
 1. Write 16 ASCII bytes of the patch name to `60 00 00 00`.
 2. Write `00 0n` to `7F 00 01 04`, where n is the memory 1 to 6.

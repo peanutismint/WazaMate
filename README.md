@@ -40,6 +40,18 @@ memories when you are happy with it.
 **Share presets as files.** Export one preset or your whole library to a small
 `.json` file and send it to someone. They import it and hear what you heard.
 
+**Tap a tempo.** Tap four times in time with the music. The tempo is shared by
+both delays, but each keeps its own note value, so you can run Delay 1 at a
+dotted 1/8 against Delay 2 at a 1/4 and re-tap without losing the relationship.
+
+**Let an LLM build you a patch.** "Copy prompt for an LLM" in the preset menu
+copies the full parameter list plus the patch you are on. Paste it into any
+chatbot and describe the sound you are after. It comes back with its reasoning,
+which amp, which drive, why that delay time, followed by the patch itself. Paste
+the whole reply into "Paste a patch from an LLM" and it loads straight away, so
+you can hear it and tweak from there. No account, no API key, and WazaMate still
+sends nothing anywhere.
+
 **Follows the headphones.** Change a patch using the button on the headphones
 and the screen follows. Turn your head and the ambience view turns with you.
 
@@ -110,9 +122,13 @@ Presets are saved in your browser's local storage for this page. That means:
 
 **So export your library.** Preset menu, **Export whole library**, and keep the
 file somewhere safe. It takes two seconds and it is the only real backup there
-is. Do it before you store anything into the headphones' memories, too, because
-storing overwrites what was in that memory and the factory patches do not come
-back on their own.
+is.
+
+Before you store anything into the headphones' memories, use **Back up headphone
+memories** in the same menu. It reads all six off the headphones and saves them
+to a file, so a store you regret can be undone. Storing overwrites whatever was
+in that memory, and the factory patches do not come back on their own, short of
+a factory reset on the headphones themselves.
 
 ## Advanced
 
@@ -136,7 +152,7 @@ built from `src/`:
 src/template.html   page structure
 src/style.css       all styling
 src/app.js          protocol, state and interface
-src/schema.json     the parameter data (see below)
+src/schema.json     the parameter data
 
 python3 build.py            writes index.html
 python3 build.py --check    fails if index.html is stale
@@ -147,15 +163,9 @@ Only Python 3 and Node are needed, with no packages to install. If you edit
 anything in `src/`, run `build.py` and commit the rebuilt `index.html` too,
 since that is the file the site actually serves.
 
-### Where the parameter data comes from
-
-WazaMate never guesses an address. Every parameter, range and display label in
-`src/schema.json` was extracted from the data files inside Roland's own editor
-app, BTS for WAZA-AIR. `tools/extract_schema.py` is the script that does it, kept
-here so the data can be checked or rebuilt from a newer version of the app.
-
-`docs/protocol.md` covers the message format, the handshake and what has been
-confirmed on real hardware.
+`src/schema.json` is the parameter table: the address, range and display label
+for everything the headphones expose. `docs/protocol.md` covers the message
+format, the handshake and what has been confirmed on real hardware.
 
 ## Support
 

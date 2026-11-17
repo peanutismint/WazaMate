@@ -277,3 +277,40 @@ button,summary,select{touch-action:manipulation}
   .toast{left:10px;right:10px;transform:none;max-width:none;bottom:14px}
   .logtools input{min-width:0}
 }
+
+/* ---------- battery, tempo bar, help dialog ---------- */
+.batt[hidden]{display:none}
+.batt{display:inline-flex;align-items:center;width:30px;height:15px;border:1.5px solid var(--mute);border-radius:3px;padding:1.5px;position:relative;flex:none}
+.batt::after{content:"";position:absolute;left:100%;top:3.5px;width:2.5px;height:5px;background:var(--mute);border-radius:0 2px 2px 0}
+.batt i{display:block;height:100%;width:var(--fill,0%);border-radius:1px;background:var(--ok);transition:width .3s}
+
+
+.tempo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#20242b}
+.tapbtn{height:38px;min-width:62px;font-weight:700;letter-spacing:.06em}
+.tapbtn:active{background:var(--text);color:#111}
+.tempo .bpm{font:13px var(--num);color:var(--mute);min-width:74px}
+.tempo .bpm b{font-size:17px;color:var(--text)}
+.tempo .bpm b.dim{color:#555b66}
+.divs{display:flex;gap:4px}
+.divs button{height:32px;min-width:46px;border-radius:7px;border:1px solid var(--line);background:#272c34;font:12px var(--num)}
+.divs .free{font-weight:700;letter-spacing:.04em}
+.otherdiv{font:12px var(--num);color:var(--mute);padding-left:4px}
+.divs button.on{background:var(--text);color:#111;border-color:var(--text);font-weight:700}
+.divs button:disabled{opacity:.4;cursor:default}
+
+.help{border:1px solid #3a3f4a;border-radius:14px;background:var(--bench);color:var(--text);max-width:520px;padding:22px 24px;font:15px/1.5 var(--font)}
+.help::backdrop{background:rgba(0,0,0,.65)}
+.help h2{margin:0 0 12px;font-size:19px}
+.help p{margin:0 0 11px;color:#c3c8d0}
+.help a{color:#7fb5ff}
+.help .btn{margin-top:6px}
+@media (max-width:720px){
+  .batt{display:none}
+  .tempo{gap:8px;padding:8px}
+  .tempo .bpm{min-width:0}
+  .divs{flex-wrap:wrap;justify-content:center}
+  .help{margin:auto 10px;padding:18px}
+}
+
+.pastebox{width:100%;box-sizing:border-box;background:#0d1014;color:var(--text);border:1px solid #3a3f4a;border-radius:8px;padding:10px;font:12.5px/1.5 var(--num);resize:vertical}
+.prow{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}

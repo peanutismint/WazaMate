@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.8. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.12. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -58,7 +58,7 @@ function dotEl(id) {
 const buf = { patch: new Uint8Array(SIZE.patch), system: new Uint8Array(SIZE.system) };
 const owner = { patch: new Array(SIZE.patch), system: new Array(SIZE.system) };
 for (const p of PARAMS) { const o = lin(p.addr); for (let k = 0; k < p.bytes; k++) owner[p.scope][o + k] = p.id; }
-const state = { preset: null, tools: false, head: null, patch: 1, names: [], sel: 'amp', test: false, muted: false, sync: 'preview', progress: 0 };
+const state = { fails: 0, battery: null, bpm: null, div: {}, preset: null, tools: false, head: null, patch: 1, names: [], sel: 'amp', test: false, muted: false, sync: 'preview', progress: 0 };
 function putRaw(p, raw) { const o = lin(p.addr), b = buf[p.scope]; if (p.bytes === 2) { b[o] = (raw >> 7) & 0x7f; b[o + 1] = raw & 0x7f; } else b[o] = raw & 0x7f; }
 function rawOf(p) { const o = lin(p.addr), b = buf[p.scope]; return p.bytes === 2 ? (b[o] << 7) | b[o + 1] : b[o]; }
 const get = id => rawOf(P[id]) - P[id].ofs;
@@ -147,6 +147,11 @@ function read(addr, size, ms = 1500) { // resolves with bytes, or null when the 
   });
 }
 // Edit-buffer addresses the headphones report that are missing from Roland's map (observed 2026-11-14)
+// Reading 7F 00 05 02 directly gets no answer (confirmed 2026-11-16). Roland's app lists a
+// matching running mode, batteryState = 3, alongside monoTuner = 1, so the headphones probably
+// only report these while in that mode. probeModes() tests both.
+const BATTERY_ADDR = [0x7F, 0x00, 0x05, 0x02];
+const RUNNING_MODE = [0x7F, 0x00, 0x00, 0x02];
 const SEEN = { 0x51: 'amp type as stored in the patch', 0x52: 'amp gain as stored in the patch', 0x54: 'amp bass as stored in the patch', 0x58: 'amp volume as stored in the patch' };
 function onMidi(m) {
   link.lastRx = Date.now();
@@ -175,6 +180,7 @@ function applyIncoming(addr, data) {
     if (data[1] !== state.patch) { state.patch = data[1]; if (!syncing) scheduleResync(); render(); }
     return;
   }
+  if (addr[0] === 0x7F && addr[1] === 0 && addr[2] === 5 && addr[3] === 2) { state.battery = data[0]; renderBattery(); return; }
   const scope = addr[0] === 0x60 && addr[1] === 0 ? 'patch' : addr[0] === 0 && addr[1] === 0 ? 'system' : null;
   if (!scope) return;
   const o = (addr[2] << 7) | addr[3], touched = new Set();
@@ -192,7 +198,7 @@ function scheduleResync() { clearTimeout(resyncTimer); resyncTimer = setTimeout(
 
 async function connect() {
   if (link.connected) { try { link.dev.gatt.disconnect(); } catch (e) { } return; }
-  if (!navigator.bluetooth) { toast('This browser has no Web Bluetooth. Use Chrome or Edge on the desktop.'); return; }
+  if (!navigator.bluetooth) return showHelp('browser');
   try {
     const dev = await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC] }, { namePrefix: 'WAZA' }, { namePrefix: 'Waza' }, { namePrefix: 'BOSS' }], optionalServices: [SVC] });
     setSync('reading', 'Connecting');
@@ -221,6 +227,7 @@ async function connect() {
     }
     if (!chr) throw err;
     dev.addEventListener('gattserverdisconnected', () => { if (link.dev === dev) dropped(); });
+    state.fails = 0;
     Object.assign(link, { dev, chr, connected: true, reads: false, chain: Promise.resolve() });
     link.pending.clear(); state.muted = false;
     log('rx', null, 'Bluetooth connected to ' + (dev.name || 'headphones'));
@@ -234,6 +241,8 @@ async function connect() {
     const msg = String(e && e.message || e);
     if (e && e.name === 'NotFoundError' && /cancel/i.test(msg)) { setSync(link.connected ? state.sync : 'preview'); return; }
     log('er', null, msg);
+    state.fails++;
+    if (state.fails >= 2) { setSync('preview'); return showHelp('windows'); }
     toast(/permissions policy|disallowed|SecurityError/i.test(msg + (e && e.name)) ? 'Web Bluetooth is blocked here. Open this file in its own Chrome window.'
       : /not paired/i.test(msg) ? 'Windows reported "Not paired" six times in a row. Switch the headphones off and on, then connect again.'
       : /service/i.test(msg) ? 'Found the headphones but not their MIDI service. Something else is probably connected to them (phone app, WIDI Master, another tab).'
@@ -250,10 +259,11 @@ async function sendConnect() { // the two writes verified in the brief (section 
   toast('The headphones refused the CONNECT messages. Copy the log and send it over.');
 }
 function dropped() {
-  link.connected = false; link.reads = false; link.dev = null; link.chr = null; state.muted = false;
+  link.connected = false; link.reads = false; link.dev = null; link.chr = null; state.muted = false; state.battery = null;
   for (const r of [...link.readers]) r.done(null);
   log('er', null, 'Bluetooth connection ended');
   setSync('preview'); render();
+  if (!navigator.bluetooth) { const c = $('#sync'); c.className = 'chip none'; c.style.cursor = 'pointer'; c.lastChild.textContent = 'This browser cannot connect'; c.title = 'Click to find out why'; }
 }
 let syncing = false;
 async function syncAll() { // read the headphones' state. Reading (RQ1) is not hardware-verified yet, so every step is allowed to fail.
@@ -301,6 +311,7 @@ function set(id, v) {
   v = clamp(Math.round(v), p.min, p.max);
   if (v === get(id)) return true;
   putRaw(p, v + p.ofs);
+  if (!applyingTempo) for (const b of DELAY_BLOCKS) if (id === timeId(b) && state.div[b]) { delete state.div[b]; saveDivs(); scheduleRender(); }
   notify(id);
   if (id === 'SYS_KNOB_POS_VOLUME' && state.muted) return true; // applied when you unmute
   const raw = v + p.ofs;
@@ -359,19 +370,142 @@ function presetSave() { const p = curPreset(); if (!p) return presetNew(); p.par
 function presetDuplicate() { const p = curPreset(); if (!p) return toast('Pick a preset first.'); const c = { id: newId(), name: cleanName(p.name.slice(0, 11) + ' copy'), params: { ...p.params } }; lib.push(c); state.preset = c.id; saveLib(); render(); }
 function presetRename() { const p = curPreset(); if (!p) return toast('Pick a preset first.'); const name = cleanName(prompt('New name (up to 16 characters):', p.name)); if (!name) return; p.name = name; setNameBytes(name); saveLib(); render(); }
 function presetDelete() { const p = curPreset(); if (!p) return toast('Pick a preset first.'); if (!confirm('Delete "' + p.name + '" from your library? The headphones are not changed.')) return; lib = lib.filter(x => x !== p); state.preset = null; saveLib(); render(); }
-function presetLoad(id) { // puts a library preset into the editor and sends it to the headphones' edit buffer. Nothing is stored until "Store in memory".
-  const p = lib.find(x => x.id === id); state.preset = p ? p.id : null; if (!p) return render();
-  for (const pid of PRESET_IDS) { const d = P[pid], v = p.params[pid]; if (typeof v === 'number' && isFinite(v)) putRaw(d, clamp(Math.round(v), d.min, d.max) + d.ofs); }
-  setNameBytes(p.name);
+function sendWholePatch(what) { // pushes the whole edit buffer to the headphones. Nothing is stored until "Store in memory".
   for (let o = 0; o < PATCH_SIZE;) { // send every stretch of defined bytes, at most 64 at a time
     if (!owner.patch[o]) { o++; continue; }
     let e = o; while (e < PATCH_SIZE && owner.patch[e] && e - o < 64) e++;
-    tx(dt1(unabs(abs([0x60, 0, 0, 0]) + o), Array.from(buf.patch.slice(o, e))), 'Preset bytes ' + o + ' to ' + (e - 1));
+    tx(dt1(unabs(abs([0x60, 0, 0, 0]) + o), Array.from(buf.patch.slice(o, e))), 'Patch bytes ' + o + ' to ' + (e - 1));
     o = e;
   }
   for (const pid of PRESET_IDS) if (P[pid].scope === 'system' && !(pid === 'SYS_KNOB_POS_VOLUME' && state.muted)) tx(dt1(addrOf(P[pid]), [rawOf(P[pid])]), nice(pid));
-  link.chain.then(() => toast(link.connected ? '"' + p.name + '" sent to the headphones. Use "Store in memory" to keep it there.' : '"' + p.name + '" loaded (preview).'));
+  link.chain.then(() => toast(link.connected ? what + ' sent to the headphones. Use "Store in memory" to keep it there.' : what + ' loaded (preview).'));
+}
+function applyParams(params) {
+  for (const pid of PRESET_IDS) { const d = P[pid], v = params[pid]; if (typeof v === 'number' && isFinite(v)) putRaw(d, clamp(Math.round(v), d.min, d.max) + d.ofs); }
+}
+function presetLoad(id) {
+  const p = lib.find(x => x.id === id); state.preset = p ? p.id : null; if (!p) return render();
+  applyParams(p.params); setNameBytes(p.name);
+  sendWholePatch('"' + p.name + '"');
   render();
+}
+/** Every parameter at the value Roland's map calls its default, with all effects switched off. */
+function presetInit() {
+  if (!confirm('Start from an empty patch?\n\nEvery effect is switched off and every control goes back to its default. The sound playing now is replaced, but nothing stored on the headphones changes.')) return;
+  resetBuffers(false);
+  for (const p of PARAMS) if (/(^|_)SW$/.test(p.id) || p.id === 'SEND_RETURN_MODE') putRaw(p, p.ofs);
+  state.preset = null; setNameBytes('INIT');
+  sendWholePatch('Empty patch');
+  render();
+}
+/** Reads one stored memory (10 0n ..) into a params object, without switching to it. */
+async function readStoredPatch(n) {
+  const got = {}, base = abs([0x10, n & 0x7f, 0, 0]);
+  for (let off = 0; off < PATCH_SIZE;) {
+    if (!owner.patch[off]) { off++; continue; }
+    let e = off; while (e < PATCH_SIZE && owner.patch[e] && e - off < 112) e++;
+    const r = await read(unabs(base + off), e - off, 2000) || await read(unabs(base + off), e - off, 3000);
+    if (!r) return null;
+    for (let i = 0; i < r.length; i++) got[off + i] = r[i];
+    off = e;
+  }
+  const params = {}, name = [];
+  for (let i = 0; i < 16; i++) name.push(got[i] == null ? 32 : got[i]);
+  for (const pid of PRESET_IDS) {
+    const d = P[pid]; if (d.scope !== 'patch') continue;
+    const o = lin(d.addr);
+    if (got[o] == null || (d.bytes === 2 && got[o + 1] == null)) continue;
+    params[pid] = (d.bytes === 2 ? (got[o] << 7) | got[o + 1] : got[o]) - d.ofs;
+  }
+  // The 12 KNOBPOS bytes hold this patch's amp settings, in the order of system addresses 04 20 onward.
+  for (let i = 0; i < 10; i++) {
+    const d = PARAMS.find(x => x.scope === 'system' && x.addr === 0x0420 + i), v = got[lin(0x0a40) + i];
+    if (d && v != null) params[d.id] = v - d.ofs;
+  }
+  return { name: String.fromCharCode(...name).replace(/[^\x20-\x7e]/g, '').trim(), params };
+}
+/** Reads all six memories and saves them as a file, so a mistaken store can be undone. */
+async function backupMemories() {
+  if (!link.connected) return toast('Connect the headphones first.');
+  if (!link.reads) return toast('The headphones are not answering read requests, so they cannot be backed up.');
+  const out = [];
+  setSync('reading', 'Backing up');
+  for (let n = 1; n <= 6 && link.connected; n++) {
+    setSync('reading', 'Backing up ' + n + ' of 6');
+    const p = await readStoredPatch(n);
+    if (!p) { setSync('live'); return toast('Memory ' + n + ' did not come back. Nothing was saved, try again.'); }
+    out.push({ id: newId(), name: cleanName(p.name) || ('Memory ' + n), params: p.params });
+  }
+  setSync(link.connected ? 'live' : 'preview');
+  if (!out.length) return;
+  download('WazaMate headphone memories.wazamate.json', fileOf(out));
+  if (confirm('Saved all six memories to a file.\n\nAlso add them to your preset library, so you can load any of them with one click?')) {
+    const stamp = new Date().toISOString().slice(0, 10);
+    for (let i = 0; i < out.length; i++) lib.push({ ...out[i], id: newId(), name: cleanName((i + 1) + ' ' + out[i].name) });
+    saveLib(); render(); toast('Six memories added to your library (backed up ' + stamp + ').');
+  }
+}
+/** A prompt an LLM can answer with a preset file, built from the live parameter map. */
+function llmPrompt() {
+  const skip = /^(KNOBPOS|SYS_LED|SYS_FXSEL|FXBOX_SEL|PEDAL_FX|EV1WL)|_HARM_\d/;
+  // FX2 and Delay 2 repeat the same parameters under another prefix, so describe them once.
+  const mirrored = /^(FX:|DELAY2)/;
+  const lines = [], byGroup = new Map();
+  for (const pid of PRESET_IDS) {
+    const d = P[pid];
+    if (skip.test(pid) || mirrored.test(d.group) || ['GLOBAL_EQ', 'USB_TUNER', 'SYSTEM', 'FX_COMMON', 'DELAY2_COMMON'].includes(d.group)) continue;
+    if (!byGroup.has(d.group)) byGroup.set(d.group, []);
+    byGroup.get(d.group).push(d);
+  }
+  for (const [group, defs] of byGroup) {
+    lines.push(group);
+    for (const d of defs) {
+      const L = d.options || LABELS[d.id];
+      let range = d.min + '-' + d.max;
+      if (L) {
+        const names = [];
+        for (let r = d.min + d.ofs; r <= d.max + d.ofs; r++) if (L[r]) names.push((r - d.ofs) + '=' + L[r]);
+        if (names.length && names.length <= 12) range = names.join(' ');
+        else if (names.length) range = d.min + '-' + d.max + ' (' + names[0] + ' ... ' + names[names.length - 1] + ')';
+      }
+      lines.push(' ' + d.id + ' ' + range);
+    }
+  }
+  return [
+    'You are setting up a guitar patch on a BOSS WAZA-AIR, a modelling headphone amp.',
+    '',
+    'THE SOUND I WANT: <describe it here, for example "a chiming delay-heavy clean tone like The Edge on U2\'s Pride">',
+    '',
+    'Reply in two parts.',
+    '',
+    'PART 1, a short plain-English explanation of what you chose and why. Cover the amp type, the drive or stomp, any modulation, the delay (including roughly what note value the delay time works out to) and the reverb. Name the real-world sound or technique you are going for. Keep it to a short paragraph per block so I can tweak before I load it.',
+    '',
+    'PART 2, the patch itself, as JSON in a fenced code block, in exactly this shape:',
+    '```json',
+    '{"format":"wazamate-presets","version":1,"presets":[{"name":"<16 characters max>","params":{"PARAM_ID":number}}]}',
+    '```',
+    '',
+    'Rules for part 2:',
+    '- Use only the parameter ids listed below, with values inside the range given.',
+    '- Switch each effect on or off explicitly with its SW parameter, 1 is on and 0 is off.',
+    '- Set the TYPE of any effect you switch on.',
+    '- SYS_KNOB_POS_FX1 and FX2 are shared level dials: 0 and 52 are off, 1-51 sets the first effect of the pair (stomp, delay 1) at level 0-50, 53-103 sets the second (mod 1, mod 2). SYS_KNOB_POS_FX3 is 0 for off, else 1-101 for reverb and delay 2 level 0-100. An effect switched on whose dial is off will not be heard, so set these.',
+    '- Mod 2 repeats Mod 1: every FX1_ parameter below also exists as FX2_ with the same range, and its switch and type are FX2_SW and FX2_FXTYPE.',
+    '- Delay 2 repeats Delay 1: every DLY_ parameter below also exists as DLY2_, and its switch and type are DLY2_SW and DLY2_TYPE.',
+    '- You may leave out any parameter you do not care about.',
+    '- Put nothing but the JSON inside the code block.',
+    '',
+    'PARAMETERS (id, then either a range or the meaning of each value)',
+    lines.join('\n'),
+    '',
+    'THE PATCH I HAVE NOW, as a starting point:',
+    JSON.stringify({ name: cleanName(patchName()) || 'Current', params: snapshot() }),
+  ].join('\n');
+}
+async function copyLlmPrompt() {
+  const text = llmPrompt();
+  try { await navigator.clipboard.writeText(text); toast('Prompt copied (' + Math.round(text.length / 1024) + ' KB). Paste it into any LLM, describe the sound you want, then bring its whole reply back with "Paste a patch from an LLM".'); }
+  catch (e) { download('WazaMate LLM prompt.txt', text); toast('Your browser would not let the page copy, so the prompt was downloaded as a text file instead.'); }
 }
 async function storeToMemory(n) {
   if (!link.connected) return toast('Connect the headphones first.');
@@ -384,13 +518,38 @@ async function storeToMemory(n) {
   if (await reply) { state.names[n] = name; toast('Stored in memory ' + n + '.'); } else toast('Sent, but the headphones did not confirm. Select memory ' + n + ' to check.');
   render();
 }
-function download(name, obj) { const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(obj, null, 1)], { type: 'application/json' })), download: name }); document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
+function download(name, obj) { const text = typeof obj === 'string', a = h('a', { href: URL.createObjectURL(new Blob([text ? obj : JSON.stringify(obj, null, 1)], { type: text ? 'text/plain' : 'application/json' })), download: name }); document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
 const fileOf = list => ({ format: 'wazamate-presets', version: 1, device: 'BOSS WAZA-AIR', presets: list.map(p => ({ name: p.name, params: p.params })) });
 function presetExport(all) { const p = curPreset(); if (!all && !p) return toast('Pick a preset first.'); if (all && !lib.length) return toast('Your library is empty.'); download((all ? 'WazaMate library' : p.name) + '.wazamate.json', fileOf(all ? lib : [p])); }
-async function presetImport(file) {
+/** Pulls the preset JSON out of a reply that may have explanation and code fences around it. */
+function extractJson(text) {
+  const tries = [];
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) tries.push(fence[1]);
+  tries.push(text);
+  const first = text.indexOf('{'), last = text.lastIndexOf('}');
+  if (first >= 0 && last > first) tries.push(text.slice(first, last + 1));
+  const at = text.indexOf('{"format"');
+  if (at >= 0) { // walk the braces from the start of the object, ignoring any inside strings
+    let depth = 0, str = false, esc = false;
+    for (let i = at; i < text.length; i++) {
+      const c = text[i];
+      if (esc) { esc = false; continue; }
+      if (c === '\\') { esc = true; continue; }
+      if (c === '"') { str = !str; continue; }
+      if (str) continue;
+      if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) { tries.push(text.slice(at, i + 1)); break; }
+    }
+  }
+  for (const t of tries) { try { const d = JSON.parse(t.trim()); if (d && typeof d === 'object') return d; } catch (e) { } }
+  return null;
+}
+async function presetImport(file) { return importData(extractJson(await file.text())); }
+function importData(d) {
   try {
-    const d = JSON.parse(await file.text());
-    if (!d || d.format !== 'wazamate-presets' || !Array.isArray(d.presets)) throw new Error('not a WazaMate preset file');
+    if (!d) throw new Error('no preset JSON found in that text');
+    if (d.format !== 'wazamate-presets' || !Array.isArray(d.presets)) throw new Error('not a WazaMate preset file');
     let n = 0, last = null;
     for (const src of d.presets.slice(0, 500)) { // only known parameters with in-range numbers are taken from the file
       if (!src || typeof src.params !== 'object' || !src.params) continue;
@@ -400,8 +559,22 @@ async function presetImport(file) {
       last = { id: newId(), name: cleanName(src.name) || 'Imported', params }; lib.push(last); n++;
     }
     if (!n) throw new Error('no usable presets in the file');
-    saveLib(); render(); toast('Imported ' + n + ' preset' + (n > 1 ? 's' : '') + '. Pick one from the list to hear it.');
+    saveLib(); state.preset = last.id; presetLoad(last.id);
+    toast('Imported ' + n + ' preset' + (n > 1 ? 's' : '') + '. "' + last.name + '" is loaded now.');
   } catch (e) { toast('Could not import: ' + (e.message || e)); }
+}
+function pasteImport() {
+  const box = $('#helpbox');
+  box.textContent = '';
+  const area = h('textarea', { class: 'pastebox', rows: '10', placeholder: 'Paste the whole reply here, explanation and all. The patch will be pulled out of it.', 'aria-label': 'Paste an LLM reply' });
+  box.append(h('h2', {}, 'Paste a patch from an LLM'),
+    h('p', {}, 'Paste the entire reply, including anything it wrote around the JSON. Whatever it chose will load straight away, so you can hear it before saving.'),
+    area,
+    h('div', { class: 'prow' },
+      h('button', { class: 'btn', type: 'button', onclick: () => $('#help').close() }, 'Cancel'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => { const t = area.value; $('#help').close(); if (t.trim()) importData(extractJson(t)); } }, 'Load this patch')));
+  $('#help').showModal();
+  area.focus();
 }
 function renderLib() {
   const s = $('#preset'); s.textContent = '';
@@ -411,6 +584,66 @@ function renderLib() {
   const m = $('#slist'); m.textContent = '';
   m.append(h('div', { class: 'mhead' }, 'Store current sound in memory'));
   for (let n = 1; n <= 6; n++) m.append(h('button', { type: 'button', onclick: () => { $('#smenu').open = false; storeToMemory(n); } }, h('b', {}, String(n)), ' ' + (state.names[n] || '')));
+}
+
+/* ------------------------------------------------------------ tempo: tap, note values, and keeping both delays together */
+const DIVISIONS = [['1/4', 1], ['1/8.', 0.75], ['1/4T', 2 / 3], ['1/8', 0.5], ['1/8T', 1 / 3], ['1/16', 0.25]];
+const DELAY_BLOCKS = ['delay', 'delay2'];
+const timeId = b => (b === 'delay' ? 'DLY_COMMON_DLY_TIME' : 'DLY2_COMMON_DLY_TIME');
+let taps = [], applyingTempo = false;
+const msFor = factor => 60000 / state.bpm * factor;
+const saveDivs = () => { try { localStorage.setItem('wazamate.divs', JSON.stringify(state.div)); } catch (e) { } };
+
+/** Writes the tempo to one delay at its own subdivision. The tempo is shared, the note value is not. */
+function applyTempo(b) {
+  const factor = state.div[b];
+  if (!state.bpm || !factor) return;
+  const id = timeId(b);
+  applyingTempo = true;
+  set(id, clamp(Math.round(msFor(factor)), P[id].min, P[id].max));
+  applyingTempo = false;
+}
+function setDivision(b, factor) {
+  if (factor) state.div[b] = factor; else delete state.div[b];
+  saveDivs();
+  applyTempo(b);
+  scheduleRender();
+}
+function tap() {
+  const now = Date.now();
+  if (taps.length && now - taps[taps.length - 1] > 3000) taps = []; // a long gap starts a new count
+  taps.push(now);
+  if (taps.length > 5) taps.shift();
+  if (taps.length >= 2) {
+    let total = 0; for (let i = 1; i < taps.length; i++) total += taps[i] - taps[i - 1];
+    state.bpm = clamp(Math.round(60000 / (total / (taps.length - 1))), 20, 400);
+    for (const b of DELAY_BLOCKS) applyTempo(b); // one tempo, each delay keeps its own note value
+  }
+  scheduleRender();
+}
+function tempoBar(b) {
+  const other = b === 'delay' ? 'delay2' : 'delay', max = P[timeId(b)].max;
+  const row = h('div', { class: 'tempo' },
+    h('button', { class: 'btn tapbtn', type: 'button', title: 'Tap four times in time with the music. The tempo is shared by both delays.', onclick: tap }, 'TAP'),
+    h('div', { class: 'bpm' }, state.bpm ? h('b', {}, String(state.bpm)) : h('b', { class: 'dim' }, '--'), ' BPM'));
+  const divs = h('div', { class: 'divs' });
+  for (const [label, factor] of DIVISIONS) {
+    const ms = state.bpm ? Math.round(msFor(factor)) : null;
+    divs.append(h('button', {
+      type: 'button', class: state.div[b] === factor ? 'on' : '', disabled: state.bpm ? null : '',
+      title: ms ? label + ' at ' + state.bpm + ' BPM is ' + ms + ' ms' + (ms > max ? ', longer than this delay can go, so it will stop at ' + max + ' ms' : '') : 'Tap a tempo first',
+      onclick: () => setDivision(b, factor),
+    }, label));
+  }
+  divs.append(h('button', {
+    type: 'button', class: 'free' + (state.div[b] ? '' : ' on'), title: 'Set this delay’s time by hand, ignoring the tempo',
+    onclick: () => setDivision(b, null),
+  }, 'MS'));
+  row.append(divs);
+  const theirs = state.div[other], name = SLOTS[other].label;
+  row.append(h('div', { class: 'otherdiv', title: theirs ? name + ' follows the same tempo at its own note value' : name + ' is set by hand' },
+    name + ': ' + (theirs ? (DIVISIONS.find(d => d[1] === theirs) || [''])[0] : 'manual')));
+  return row;
 }
 
 /* ------------------------------------------------------------ controls */
@@ -672,6 +905,7 @@ function renderDetail() {
   const b = state.sel, s = SLOTS[b], main = $('#main'), side = $('#side');
   main.textContent = ''; side.textContent = '';
   const dev = deviceFor(b);
+  if (b === 'delay' || b === 'delay2') main.append(tempoBar(b));
   main.append(dev.el);
   if (dev.rest && dev.rest.length) main.append(h('div', { class: 'more' }, h('h4', {}, 'More ' + s.label.toLowerCase() + ' controls'), dev.rest.map(ctl)));
   if (dev.scale) main.append(h('div', { class: 'more' }, h('h4', {}, 'User scale (harmony per note)'), dev.scale.map(id => knob(id))));
@@ -695,6 +929,68 @@ function scheduleLog() {
     box.scrollTop = box.scrollHeight;
   });
 }
+const HELP = {
+  browser: () => {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    return {
+      title: ios ? 'iPhones and iPads cannot connect' : 'This browser cannot connect',
+      body: ios
+        ? ['Apple does not allow Web Bluetooth in Safari or in Chrome on iOS, so no browser Apple ships can reach the headphones. This is not something WazaMate can work around.',
+           'Everything else works here: build patches, keep a library, import and export files. They will play as soon as you open the same library on a desktop.',
+           'If you want to connect from this device, a third party browser with Web Bluetooth built in, such as Bluefy, is the usual route. That is untested with WazaMate.']
+        : ['Connecting needs Web Bluetooth, which this browser does not have. Chrome or Edge on Windows, macOS or Linux will work, as will Chrome on Android. Firefox does not support it on any platform.',
+           'You can still build patches and export them here, then open the file on a machine that can connect.'],
+      link: ios ? { text: 'Browser support, in the README', href: 'https://github.com/peanutismint/WazaMate#browser-support' } : null,
+    };
+  },
+  windows: () => ({
+    title: 'Still not connecting',
+    body: ['Two attempts failed. Worth trying first, in order:',
+      '1. On the headphones, turn Bluetooth off and on with a short hold of the Bluetooth button, then connect again.',
+      '2. Close anything else that might be holding the headphones: Roland\'s app on your phone, another WazaMate tab, a WIDI Master. They accept one MIDI connection at a time.',
+      '3. On Windows, "GATT Error: Not paired" needs a particular dance: pair the headphones through Windows Settings using Add device and Show all devices, then uninstall them in Device Manager, then connect here again. The README has the full sequence.'],
+    link: { text: 'The full Windows sequence', href: 'https://github.com/peanutismint/WazaMate#if-windows-refuses-to-connect' },
+  }),
+};
+function showHelp(kind) {
+  const d = HELP[kind](), box = $('#helpbox');
+  box.textContent = '';
+  box.append(h('h2', {}, d.title), ...d.body.map(p => h('p', {}, p)));
+  if (d.link) box.append(h('p', {}, h('a', { href: d.link.href, target: '_blank', rel: 'noopener' }, d.link.text)));
+  box.append(h('button', { class: 'btn primary', type: 'button', onclick: () => $('#help').close() }, 'Close'));
+  $('#help').showModal();
+}
+function renderBattery() {
+  const e = $('#battery'), v = state.battery;
+  // Nothing sensible to show unless a non-zero byte arrived: the format is unverified.
+  if (v == null || v === 0 || v > 100) { e.hidden = true; return; }
+  e.hidden = false;
+  const pct = v <= 4 ? [0, 25, 50, 75, 100][v] : v;
+  e.style.setProperty('--fill', pct + '%');
+  e.title = 'Headphone battery, about ' + pct + '%. Roland\'s app shows four levels, and the raw value here is ' + v + '. The exact meaning is not confirmed.';
+  e.setAttribute('aria-label', 'Battery about ' + pct + ' percent');
+}
+/** Puts the headphones into their battery and tuner modes briefly, logging whatever they send. */
+async function probeModes() {
+  if (!link.connected) return toast('Connect the headphones first.');
+  if (!confirm('This switches the headphones into their battery mode, then their tuner mode, then back to normal play.\n\nYour sound may cut out for about fifteen seconds. Play and hold a note when the log says to.\n\nNothing is written to any patch. Run it?')) return;
+  const mark = t => log('rx', null, '--------- ' + t + ' ---------');
+  try {
+    mark('probe: battery mode');
+    await tx(dt1(RUNNING_MODE, [3]), 'Running mode 3 (battery)');
+    await sleep(2500);
+    await read(BATTERY_ADDR, 1, 1200);
+    mark('probe: tuner mode, PLAY AND HOLD A NOTE NOW');
+    await tx(dt1(RUNNING_MODE, [1]), 'Running mode 1 (tuner)');
+    await sleep(8000);
+    await read([0x7F, 0x00, 0x03, 0x00], 2, 1200);
+    await sleep(1500);
+  } finally {
+    await tx(dt1(RUNNING_MODE, [0]), 'Running mode 0 (play)');
+    mark('probe finished, back in play mode');
+  }
+  toast('Probe finished. Copy the log and send it over.');
+}
 let toastTimer = null;
 function toast(t) { const e = $('#toast'); e.textContent = t; e.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => e.classList.remove('show'), 4200); }
 function parseHex(s) { const m = s.trim().split(/[\s,]+/).filter(Boolean).map(x => parseInt(x, 16)); return m.length && m.every(n => n >= 0 && n <= 255) ? m : null; }
@@ -706,11 +1002,16 @@ const UI_ICON = {
   store: '<path d="M5 14v-2a7 7 0 0 1 14 0v2"/><rect x="3" y="13" width="4" height="7" rx="1.5"/><rect x="17" y="13" width="4" height="7" rx="1.5"/><path d="M12 3v7M9 7l3 3 3-3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>', trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
-  imp: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>', exp: '<path d="M12 15V3M7 8l5-5 5 5M4 20h16"/>',
+  imp: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',
+  blank: '<rect x="4" y="3" width="16" height="18" rx="2"/>',
+  paste: '<rect x="7" y="4" width="11" height="16" rx="2"/><path d="M11 4V3h3v1M4 8v11a2 2 0 0 0 2 2h1"/>',
+  spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/>', exp: '<path d="M12 15V3M7 8l5-5 5 5M4 20h16"/>',
 };
 function init() {
   for (const e of document.querySelectorAll('[data-ic]')) e.insertAdjacentHTML('afterbegin', `<svg class="uic" viewBox="0 0 24 24" aria-hidden="true">${UI_ICON[e.dataset.ic]}</svg>`);
-  try { state.tools = localStorage.getItem('wazamate.tools') === '1'; } catch (e) { }
+  try { state.tools = localStorage.getItem('wazamate.tools') === '1'; state.div = JSON.parse(localStorage.getItem('wazamate.divs') || '{}'); } catch (e) { }
+  $('#battery').hidden = true;
+  if (!navigator.bluetooth) $('#sync').addEventListener('click', () => showHelp('browser'));
   resetBuffers(true);
   $('#tools').checked = state.tools;
   $('#tools').addEventListener('change', e => { state.tools = e.target.checked; try { localStorage.setItem('wazamate.tools', state.tools ? '1' : '0'); } catch (err) { } setSync(state.sync); render(); });
@@ -718,7 +1019,7 @@ function init() {
   $('#connect').addEventListener('click', connect);
   $('#preset').addEventListener('change', e => presetLoad(e.target.value));
   $('#psave').addEventListener('click', presetSave);
-  const acts = { pnew: presetNew, pdup: presetDuplicate, pren: presetRename, pdel: presetDelete, pexp: () => presetExport(false), pexpall: () => presetExport(true), pimp: () => $('#pfile').click() };
+  const acts = { pnew: presetNew, pinit: presetInit, pdup: presetDuplicate, pren: presetRename, pdel: presetDelete, pexp: () => presetExport(false), pexpall: () => presetExport(true), pimp: () => $('#pfile').click(), pbackup: backupMemories, pllm: copyLlmPrompt, ppaste: pasteImport };
   for (const k in acts) $('#' + k).addEventListener('click', () => { $('#pmenu').open = false; acts[k](); });
   $('#pfile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) presetImport(f); });
   $('#mute').addEventListener('click', toggleMute);
@@ -732,6 +1033,7 @@ function init() {
   $('#logbar').addEventListener('toggle', scheduleLog);
   $('#sendraw').addEventListener('click', () => { const m = parseHex($('#raw').value); if (!m) return toast('Type hex bytes, for example F0 41 ... F7.'); tx(m, 'Raw message'); });
   $('#senddt1').addEventListener('click', () => { const m = parseHex($('#raw').value); if (!m || m.length < 5 || m.some(n => n > 127)) return toast('Type 4 address bytes and then the data bytes, all 00 to 7F.'); tx(dt1(m.slice(0, 4), m.slice(4)), 'Raw DT1'); });
+  $('#probe').addEventListener('click', probeModes);
   $('#copylog').addEventListener('click', () => navigator.clipboard.writeText(logs.map(l => l.line).join('\n')).then(() => toast('Log copied.')));
   $('#copymarks').addEventListener('click', () => { const out = Object.entries(marks).map(([id, m]) => `${m === 'ok' ? 'WORKS' : 'WRONG'}  ${id}  ${P[id] ? hex(addrOf(P[id])) : ''}`).join('\n') || 'No marks yet.'; navigator.clipboard.writeText(out).then(() => toast('Test results copied. Paste them into the chat.')); });
   setSync('preview'); render();

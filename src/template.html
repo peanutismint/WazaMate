@@ -10,10 +10,11 @@
 </head>
 <body>
 <header class="bar">
-  <div class="brand">WazaMate<small>v0.8</small></div>
+  <div class="brand">WazaMate<small>v0.12</small></div>
   <div class="patches" id="patches" role="group" aria-label="Patch"></div>
   <div class="grow"></div>
   <span class="chip preview" id="sync"><b></b><span></span></span>
+  <span class="batt" id="battery" role="img" hidden><i></i></span>
   <label class="switch toolonly" title="Lets untested controls send to the headphones"><input type="checkbox" id="test">Test mode</label>
   <button class="btn" id="readbtn" type="button" hidden title="Ask the headphones for their current settings">Read state</button>
   <button class="btn" id="hs" type="button" hidden title="Send the two CONNECT messages again">Send CONNECT</button>
@@ -34,8 +35,12 @@
       <button class="btn sm ic only" id="psave" type="button" data-ic="save" aria-label="Save preset" title="Save the current sound over the selected preset, or as a new one"></button>
       <details class="menu" id="pmenu"><summary class="btn sm ic only" data-ic="dots" aria-label="Preset actions" title="Preset actions"></summary>
         <div class="menu-body list">
-          <button type="button" id="pnew" data-ic="plus">New from current sound</button><button type="button" id="pdup" data-ic="copy">Duplicate</button><button type="button" id="pren" data-ic="edit">Rename</button><button type="button" id="pdel" data-ic="trash">Delete</button>
+          <button type="button" id="pnew" data-ic="plus">New from current sound</button><button type="button" id="pinit" data-ic="blank" title="Switch every effect off and put every control back to its default, as a blank canvas">Start from an empty patch</button>
+          <button type="button" id="pdup" data-ic="copy">Duplicate</button><button type="button" id="pren" data-ic="edit">Rename</button><button type="button" id="pdel" data-ic="trash">Delete</button>
           <hr><button type="button" id="pimp" data-ic="imp">Import file</button><button type="button" id="pexp" data-ic="exp">Export this preset</button><button type="button" id="pexpall" data-ic="exp">Export whole library</button>
+          <hr><button type="button" id="pbackup" data-ic="store" title="Read all six memories off the headphones and save them to a file, so a mistaken store can be undone">Back up headphone memories</button>
+          <button type="button" id="ppaste" data-ic="paste" title="Paste a reply from an LLM, explanation and all. The patch is pulled out of the text and loaded so you can hear it.">Paste a patch from an LLM</button>
+          <button type="button" id="pllm" data-ic="spark" title="Copies a ready-made prompt: the full list of parameters plus the patch you are on. Paste it into any LLM, describe the sound you want, and bring its reply back with Import file. Nothing is sent anywhere by WazaMate.">Copy prompt for an LLM</button>
         </div>
       </details>
       <details class="menu" id="smenu"><summary class="btn sm ic only" data-ic="store" aria-label="Store in a headphone memory" title="Store the current sound in a headphone memory"></summary>
@@ -57,11 +62,13 @@
     <input id="raw" placeholder="Hex bytes. Full message, or address + data for a DT1" aria-label="Raw hex bytes">
     <button class="btn" id="senddt1" type="button">Send as DT1</button>
     <button class="btn" id="sendraw" type="button">Send as typed</button>
+    <button class="btn" id="probe" type="button" title="Briefly switch the headphones into battery mode and tuner mode, logging whatever they send back. Your sound cuts out for about fifteen seconds.">Probe battery and tuner</button>
     <button class="btn" id="copylog" type="button">Copy log</button>
     <button class="btn" id="copymarks" type="button">Copy test results</button>
   </div>
   <div id="log"></div>
 </details>
+<dialog class="help" id="help"><div id="helpbox"></div></dialog>
 <div class="toast" id="toast" role="status"></div>
 <script>
 /*__JS__*/
