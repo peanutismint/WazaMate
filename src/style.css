@@ -72,7 +72,7 @@ button{cursor:pointer}
 .side{display:flex;flex-direction:column;gap:14px}
 .card{background:var(--bench);border:1px solid var(--line);border-radius:14px;padding:14px}
 .card h3{margin:0 0 10px;font-size:13px;font-weight:600;color:var(--mute)}
-.types{display:grid;grid-template-columns:1fr 1fr;gap:5px;max-height:262px;overflow:auto}
+.types{display:grid;grid-template-columns:1fr 1fr;gap:5px;max-height:520px;overflow:auto}
 .types button{padding:6px 8px;border-radius:7px;border:1px solid var(--line);background:#20242b;font-size:12px;text-align:left}
 .types button.on{background:var(--text);color:#111;border-color:var(--text);font-weight:600}
 .colors{display:grid;gap:4px;font-size:12px;margin-top:10px}

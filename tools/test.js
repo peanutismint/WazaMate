@@ -18,7 +18,7 @@ const src = p => fs.readFileSync(path.join(root, 'src', p), 'utf8');
 // Load app.js with its data placeholder filled in, then pull out the internals
 // we want to exercise. The file guards its own init() behind a document check.
 let code = src('app.js').replace('/*__DATA__*/null', src('schema.json'));
-code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,dial,kindOf,fmt,PATCH_SIZE};';
+code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,llmPrompt,kindOf,fmt,PATCH_SIZE};';
 const mod = { exports: {} };
 new Function('module', 'localStorage', code)(mod, { getItem: () => null });
 const A = mod.exports;
@@ -60,17 +60,17 @@ is(A.hex(seen), A.hex(long), 'a 128 byte message survives wrap and parse');
 is(A.wrapBle(long).every(p => p.length <= 20), true, 'no packet exceeds the 20 byte default MTU');
 is(A.wrapBle(long).length > 1, true, 'a long message is split across packets');
 
-console.log('\nShared effect level dial');
-// One stored value covers a pair of effects. On dials 1 and 2, 0 and 52 mean
-// off, 1 to 51 is the first effect at level 0 to 50, 53 to 103 is the second.
+console.log('\nEffect level dials (00 00 04 27-29)');
+// The Katana-style shared dials have no control in the UI and are not offered
+// to the LLM, but they are still part of the patch, so presets and backups
+// must keep carrying them.
+for (const n of [1, 2, 3]) is(A.PRESET_IDS.includes('SYS_KNOB_POS_FX' + n), true, `SYS_KNOB_POS_FX${n} is still saved in presets`);
 A.resetBuffers(false);
-for (const [raw, half, level] of [[0, 'off', 0], [1, 'low', 0], [51, 'low', 50], [52, 'off', 0], [53, 'high', 0], [103, 'high', 50]]) {
-  A.putRaw(A.P.SYS_KNOB_POS_FX1, raw);
-  const d = A.dial(1);
-  is(`${d.half}/${d.level}`, `${half}/${level}`, `dial 1 raw ${raw} reads ${half} at ${level}`);
+const cat = A.llmPrompt('test');
+for (const n of [1, 2, 3]) is(/SYS_KNOB_POS_FX/.test(cat), false, `the LLM catalogue does not offer SYS_KNOB_POS_FX${n}`);
+for (const k of ['GAIN', 'BASS', 'MIDDLE', 'TREBLE', 'PRESENCE', 'VOLUME', 'TYPE']) {
+  is(A.PRESET_IDS.includes('SYS_KNOB_POS_' + k), true, `the amp's ${k} knob survived the dial removal`);
 }
-A.putRaw(A.P.SYS_KNOB_POS_FX3, 21);
-is(A.dial(3).level, 20, 'dial 3 raw 21 reads level 20');
 
 console.log('\nSchema');
 is(A.PARAMS.length > 500, true, `${A.PARAMS.length} parameters loaded`);

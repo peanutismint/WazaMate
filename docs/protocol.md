@@ -133,6 +133,18 @@ the same editor app. **Confirmed** from Roland's code and from live logs:
   at level 0 to 50.
 - Dial 3 (reverb with delay 2): `0` is off, `1` to `101` is level 0 to 100.
 
+WazaMate reads and writes these values as part of a patch, so presets and
+backups carry them, but from v0.16 it gives them no control of their own and
+does not describe them to an LLM. They modelled a physical knob the headphones
+do not have, and one value standing for two effects made every other level
+control harder to reason about.
+
+**Untested, and worth knowing:** whether a dial pointing at one effect of a
+pair silences the other. If it does, a patch can switch an effect on and leave
+it inaudible. To settle it, switch on stomp and mod 1 together, set mod 1 to
+something unmistakable such as tremolo, put the dial in the stomp half
+(`00 00 04 27` = `20`, say) and listen for the tremolo.
+
 ### Chain order
 
 `CHAIN_PTN` at `60 00 12 00` picks where the amp sits:

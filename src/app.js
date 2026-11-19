@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.15. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.16. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -454,7 +454,7 @@ function changedParams() {
 }
 
 function llmPrompt(wanted) {
-  const skip = /^(KNOBPOS|SYS_LED|SYS_FXSEL|FXBOX_SEL|PEDAL_FX|EV1WL)|_HARM_\d/;
+  const skip = /^(KNOBPOS|SYS_LED|SYS_FXSEL|SYS_KNOB_POS_FX[123]$|FXBOX_SEL|PEDAL_FX|EV1WL)|_HARM_\d/;
   // FX2 and Delay 2 repeat the same parameters under another prefix, so describe them once.
   const mirrored = /^(FX:|DELAY2)/;
   const lines = [], byGroup = new Map();
@@ -501,10 +501,8 @@ function llmPrompt(wanted) {
     '- Use only the parameter ids listed below, with values inside the range given.',
     '- Switch each effect on or off explicitly with its SW parameter, 1 is on and 0 is off.',
     '- Set the TYPE of any effect you switch on.',
-    '- The six effects sit in three pairs, and each pair shares one level dial. Stomp and Mod 1 share SYS_KNOB_POS_FX1. Delay 1 and Mod 2 share SYS_KNOB_POS_FX2. Reverb and Delay 2 share SYS_KNOB_POS_FX3.',
-    '- On dials 1 and 2: 0 and 52 mean off, 1-51 points the dial at the first effect of the pair (Stomp, Delay 1) at level 0-50, and 53-103 points it at the second (Mod 1, Mod 2) at level 0-50. On dial 3: 0 is off, 1-101 is level 0-100.',
-    '- A dial points at one effect of its pair at a time, so build the patch so that no more than one effect per pair depends on it. If you want an overdrive and a modulation together, put the modulation in Mod 2 rather than Mod 1, since Mod 1 competes with the stomp for the same dial.',
-    '- Set each effect\'s own level parameter as well, such as ODDS_EFFECT_LEVEL or the chosen type\'s LEVEL, since those are stored per effect and are not the same thing as the shared dial.',
+    '- Set how much of each effect is heard with that effect\'s own level parameter, such as ODDS_EFFECT_LEVEL or the chosen type\'s LEVEL.',
+    '- All six effect slots are independent, so any combination of them can be on at once.',
     '- Mod 2 repeats Mod 1: every FX1_ parameter below also exists as FX2_ with the same range, and its switch and type are FX2_SW and FX2_FXTYPE.',
     '- Delay 2 repeats Delay 1: every DLY_ parameter below also exists as DLY2_, and its switch and type are DLY2_SW and DLY2_TYPE.',
     '- Anything you leave out keeps the value it already has, so to switch an effect off, say so with its SW parameter rather than omitting it.',
@@ -946,7 +944,7 @@ function tempoBar(b) {
 /* ------------------------------------------------------------ controls */
 let R = {};
 const reg = (id, fn) => { (R[id] = R[id] || []).push(fn); fn(); };
-function notify(id) { (R[id] || []).forEach(f => f()); if (STRUCT.has(id)) scheduleRender(); else if (/^SYS_KNOB_POS_FX|^SEND_RETURN_MODE$/.test(id)) renderChain(); }
+function notify(id) { (R[id] || []).forEach(f => f()); if (STRUCT.has(id)) scheduleRender(); else if (id === 'SEND_RETURN_MODE') renderChain(); }
 function vknob(o) { // o: label,min,max,get,set,fmt,ids[],stId,zero,big
   const el = h('div', { class: 'ctl knob' + (o.big ? ' big' : ''), tabindex: 0, role: 'slider', 'aria-label': o.label, 'data-st': o.stId ? statusOf(o.stId) : 'ok' });
   const val = h('div', { class: 'k-val' }), lab = h('div', { class: 'k-lab' }, o.label);
@@ -1002,12 +1000,12 @@ function swButton(id, cls, label) { // footswitch or power button bound to an ef
 
 /* ------------------------------------------------------------ blocks */
 const SLOTS = {
-  booster: { label: 'Stomp', cat: 'drive', sw: 'ODDS_SW', type: 'ODDS_TYPE', asg: 'FX1A', button: 1, half: 'low', groups: ['BOOSTER'] },
-  mod: { label: 'Mod 1', cat: 'mod', sw: 'FX1_SW', type: 'FX1_FXTYPE', asg: 'FX1B', button: 1, half: 'high', prefix: 'MOD' },
-  delay: { label: 'Delay 1', cat: 'delay', sw: 'DLY_SW', type: 'DLY_TYPE', asg: 'FX2A', button: 2, half: 'low', prefix: 'DELAY' },
-  fx: { label: 'Mod 2', cat: 'mod', sw: 'FX2_SW', type: 'FX2_FXTYPE', asg: 'FX2B', button: 2, half: 'high', prefix: 'FX' },
-  reverb: { label: 'Reverb', cat: 'reverb', sw: 'REVERB_SW', type: 'REVERB_TYPE', asg: 'FX3A', selId: 'FXBOX_SEL_FX3', button: 3, half: 'single', groups: ['REVERB'] },
-  delay2: { label: 'Delay 2', cat: 'delay', sw: 'DLY2_SW', type: 'DLY2_TYPE', asg: 'FX3B', selId: 'FXBOX_SEL_FX3', button: 3, half: 'single', prefix: 'DELAY2' },
+  booster: { label: 'Stomp', cat: 'drive', sw: 'ODDS_SW', type: 'ODDS_TYPE', asg: 'FX1A', groups: ['BOOSTER'] },
+  mod: { label: 'Mod 1', cat: 'mod', sw: 'FX1_SW', type: 'FX1_FXTYPE', asg: 'FX1B', prefix: 'MOD' },
+  delay: { label: 'Delay 1', cat: 'delay', sw: 'DLY_SW', type: 'DLY_TYPE', asg: 'FX2A', prefix: 'DELAY' },
+  fx: { label: 'Mod 2', cat: 'mod', sw: 'FX2_SW', type: 'FX2_FXTYPE', asg: 'FX2B', prefix: 'FX' },
+  reverb: { label: 'Reverb', cat: 'reverb', sw: 'REVERB_SW', type: 'REVERB_TYPE', asg: 'FX3A', selId: 'FXBOX_SEL_FX3', groups: ['REVERB'] },
+  delay2: { label: 'Delay 2', cat: 'delay', sw: 'DLY2_SW', type: 'DLY2_TYPE', asg: 'FX3B', selId: 'FXBOX_SEL_FX3', prefix: 'DELAY2' },
   amp: { label: 'Amp', cat: 'amp', type: 'SYS_KNOB_POS_TYPE' },
   eq: { label: 'EQ', cat: 'eq', sw: 'EQ_SW', groups: ['EQ'] },
   ns: { label: 'Noise gate', cat: 'dyn', sw: 'NS1_SW', groups: ['NOISE_SUPPRESSOR'] },
@@ -1032,12 +1030,6 @@ function paramsFor(b) { // which parameters matter for a block and its current t
 }
 const typeName = b => { const s = SLOTS[b]; if (!s.type) return ''; const p = P[s.type], n = (p.options || LABELS[s.type] || [])[get(s.type)]; return n || 'Type ' + get(s.type); };
 const STRUCT = new Set(['CHAIN_PTN', 'POSITION_EQ', ...PARAMS.filter(p => /^(SYS_LED_STATE|SYS_FXSEL|FXBOX_)/.test(p.id)).map(p => p.id), ...Object.values(SLOTS).flatMap(s => [s.sw, s.type]).filter(Boolean)]);
-function dial(button) { // decode an effect knob position (Roland's editor: 0 and 52 are OFF, 1-51 first effect, 53-103 second effect)
-  const raw = get('SYS_KNOB_POS_FX' + button);
-  if (button === 3) return raw <= 0 ? { half: 'off', level: 0 } : { half: 'single', level: raw - 1 };
-  if (raw === 0 || raw === 52) return { half: 'off', level: 0 };
-  return raw < 52 ? { half: 'low', level: raw - 1 } : { half: 'high', level: raw - 53 };
-}
 
 /* ------------------------------------------------------------ chain screen */
 const ICON = {
@@ -1179,17 +1171,6 @@ function typeCard(b) {
   const c = h('div', { class: 'card ctl', 'data-st': statusOf(s.type) }, h('h3', {}, b === 'amp' ? 'Amp type' : s.label + ' type', dotEl(s.type)), grid);
   return c;
 }
-function amountCard(b) { // how much of this effect is mixed in. The headphones store it as one value per pair of effects (00 00 04 27, 28, 29).
-  const s = SLOTS[b], n = s.button, kid = 'SYS_KNOB_POS_FX' + n, max = n === 3 ? 100 : 50;
-  const other = { booster: 'mod', mod: 'booster', delay: 'fx', fx: 'delay' }[b];
-  const mine = () => { const d = dial(n); return d.half === s.half ? d.level : 0; };
-  const note = h('div', { class: 'note' });
-  const lvl = vknob({ label: 'AMOUNT', min: 0, max, get: mine, set: v => set(kid, n === 3 ? 1 + v : s.half === 'high' ? 53 + v : 1 + v), fmt: v => { const d = dial(n); return d.half === s.half ? String(v) : 'OFF'; }, ids: [kid], stId: kid });
-  reg(kid, () => { const d = dial(n); note.textContent = d.half === s.half ? '' : d.half === 'off' || !other ? 'Currently off.' : 'Currently off. The amount is set on ' + SLOTS[other].label + ' instead, the two share one setting.'; });
-  const card = h('div', { class: 'card' }, h('h3', {}, s.label + ' amount'), h('div', { class: 'hprow' }, lvl, h('div', { style: 'flex:1' }, note, h('button', { class: 'btn', type: 'button', onclick: () => set(kid, 0) }, 'Off'))));
-  if (n === 3) { const col = 'GRY'[get('FXBOX_SEL_FX3')] || 'G'; card.append(h('div', { class: 'srow', style: 'justify-content:flex-start' }, selectCtl('FXBOX_FX3_LAYER_' + col, 'AMOUNT CONTROLS'))); }
-  return card;
-}
 function legendCard() {
   const row = (st, t) => h('span', {}, h('b', { class: 'dot', 'data-st': st, style: 'cursor:default;margin:0' }), t);
   return h('div', { class: 'card legend' }, row('ok', 'Tested on your headphones'), row('untested', "From Roland's map, not tested yet"), row('flag', 'Tested, behaved oddly or you marked it wrong'),
@@ -1209,7 +1190,6 @@ function renderDetail() {
   if ((b === 'mod' || b === 'fx') && !paramsFor(b).length) main.append(h('p', { style: 'color:var(--mute)' }, 'Roland\'s map has no parameters for this type.'));
   if (b === 'sys') side.append(h('div', { class: 'card', style: 'font-size:13px;color:var(--mute)' }, 'Settings outside the signal chain. None of these have been tested on your headphones yet.'));
   if (s.type) side.append(typeCard(b));
-  if (s.button) side.append(amountCard(b));
   if (state.tools) side.append(legendCard());
 }
 let rq = 0;
