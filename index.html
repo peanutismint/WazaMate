@@ -876,8 +876,13 @@ function llmPrompt(wanted) {
       if (L) {
         const names = [];
         for (let r = d.min + d.ofs; r <= d.max + d.ofs; r++) if (L[r]) names.push((r - d.ofs) + '=' + L[r]);
-        if (names.length && names.length <= 12) range = names.join(' ');
-        else if (names.length) range = d.min + '-' + d.max + ' (' + names[0] + ' ... ' + names[names.length - 1] + ')';
+        // A list of names, like effect types, must be given in full: the numbers are not guessable,
+        // and a model that guesses picks a hidden value and the effect silently does nothing.
+        // A measurement scale (Hz, ms, dB) only needs its ends, since the steps are regular.
+        const scale = names.filter(n => /(^|=)[-+]?[\d.]+\s*(Hz|kHz|ms|dB)?$/.test(n.split('=').slice(1).join('='))).length > names.length / 2;
+        if (!names.length) range = d.min + '-' + d.max;
+        else if (!scale || names.length <= 12) range = names.join(' ');
+        else range = d.min + '-' + d.max + ' (' + names[0] + ' ... ' + names[names.length - 1] + ')';
       }
       lines.push(' ' + d.id + ' ' + range);
     }
@@ -900,7 +905,10 @@ function llmPrompt(wanted) {
     '- Use only the parameter ids listed below, with values inside the range given.',
     '- Switch each effect on or off explicitly with its SW parameter, 1 is on and 0 is off.',
     '- Set the TYPE of any effect you switch on.',
-    '- SYS_KNOB_POS_FX1 and FX2 are shared level dials: 0 and 52 are off, 1-51 sets the first effect of the pair (stomp, delay 1) at level 0-50, 53-103 sets the second (mod 1, mod 2). SYS_KNOB_POS_FX3 is 0 for off, else 1-101 for reverb and delay 2 level 0-100. An effect switched on whose dial is off will not be heard, so set these.',
+    '- The six effects sit in three pairs, and each pair shares one level dial. Stomp and Mod 1 share SYS_KNOB_POS_FX1. Delay 1 and Mod 2 share SYS_KNOB_POS_FX2. Reverb and Delay 2 share SYS_KNOB_POS_FX3.',
+    '- On dials 1 and 2: 0 and 52 mean off, 1-51 points the dial at the first effect of the pair (Stomp, Delay 1) at level 0-50, and 53-103 points it at the second (Mod 1, Mod 2) at level 0-50. On dial 3: 0 is off, 1-101 is level 0-100.',
+    '- A dial points at one effect of its pair at a time, so build the patch so that no more than one effect per pair depends on it. If you want an overdrive and a modulation together, put the modulation in Mod 2 rather than Mod 1, since Mod 1 competes with the stomp for the same dial.',
+    '- Set each effect\'s own level parameter as well, such as ODDS_EFFECT_LEVEL or the chosen type\'s LEVEL, since those are stored per effect and are not the same thing as the shared dial.',
     '- Mod 2 repeats Mod 1: every FX1_ parameter below also exists as FX2_ with the same range, and its switch and type are FX2_SW and FX2_FXTYPE.',
     '- Delay 2 repeats Delay 1: every DLY_ parameter below also exists as DLY2_, and its switch and type are DLY2_SW and DLY2_TYPE.',
     '- Anything you leave out keeps the value it already has, so to switch an effect off, say so with its SW parameter rather than omitting it.',
