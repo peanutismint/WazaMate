@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.18. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.19. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -703,22 +703,59 @@ function extractJson(text) {
   return null;
 }
 async function presetImport(file) { return importData(extractJson(await file.text())); }
+/** Turns one written value into a raw number, or explains why it cannot.
+ *  Models often write the name of a type rather than its number, so a name that
+ *  matches the parameter's own list is accepted. Anything else is reported, never
+ *  dropped in silence: a quietly ignored line leaves a block at its old setting,
+ *  which reads as the editor undoing what the model just said it did. */
+function coerce(id, v) {
+  const d = P[id], L = d.options || LABELS[d.id];
+  if (typeof v === 'number' && isFinite(v)) {
+    const c = clamp(Math.round(v), d.min, d.max);
+    return c === Math.round(v) ? { value: c } : { value: c, note: id + ' was ' + v + ', outside ' + d.min + ' to ' + d.max + ', so it was pulled to ' + c };
+  }
+  if (typeof v === 'string') {
+    const want = v.trim().toUpperCase();
+    if (/^[-+]?\d+(\.\d+)?$/.test(want)) return coerce(id, parseFloat(want));
+    if (L) {
+      for (let r = d.min + d.ofs; r <= d.max + d.ofs; r++) {
+        if (L[r] && String(L[r]).toUpperCase() === want) return { value: r - d.ofs };
+      }
+      const near = [];
+      for (let r = d.min + d.ofs; r <= d.max + d.ofs; r++) if (L[r] && String(L[r]).toUpperCase().replace(/[^A-Z0-9]/g, '') === want.replace(/[^A-Z0-9]/g, '')) near.push(r);
+      if (near.length === 1) return { value: near[0] - d.ofs };
+    }
+    return { why: id + ' was "' + v + '", which is not one of its settings' };
+  }
+  return { why: id + ' was ' + JSON.stringify(v) + ', which is not a number' };
+}
 function importData(d) {
   try {
     if (!d) throw new Error('no preset JSON found in that text');
     if (d.format !== 'wazamate-presets' || !Array.isArray(d.presets)) throw new Error('not a WazaMate preset file');
-    let n = 0, last = null;
-    for (const src of d.presets.slice(0, 500)) { // only known parameters with in-range numbers are taken from the file
+    let n = 0, last = null, report = null;
+    for (const src of d.presets.slice(0, 500)) {
       if (!src || typeof src.params !== 'object' || !src.params) continue;
-      const params = {};
-      for (const id of PRESET_IDS) { const v = src.params[id]; if (typeof v === 'number' && isFinite(v)) params[id] = clamp(Math.round(v), P[id].min, P[id].max); }
+      const params = {}, skipped = [], notes = [];
+      for (const key in src.params) {
+        if (!P[key] || !PRESET_IDS.includes(key)) { skipped.push(key + ' is not a parameter on this amp'); continue; }
+        const r = coerce(key, src.params[key]);
+        if (r.why) { skipped.push(r.why); continue; }
+        if (r.note) notes.push(r.note);
+        params[key] = r.value;
+      }
       if (!Object.keys(params).length) continue;
       last = { id: newId(), name: cleanName(src.name) || 'Imported', params }; lib.push(last); n++;
+      report = { applied: Object.keys(params).length, skipped, notes };
     }
     if (!n) throw new Error('no usable presets in the file');
     saveLib(); state.preset = last.id; presetLoad(last.id);
-    toast('Imported ' + n + ' preset' + (n > 1 ? 's' : '') + '. "' + last.name + '" is loaded now.');
-  } catch (e) { toast('Could not import: ' + (e.message || e)); }
+    for (const line of report.skipped) log('er', null, 'Ignored: ' + line);
+    for (const line of report.notes) log('rx', null, line);
+    toast('Imported ' + n + ' preset' + (n > 1 ? 's' : '') + '. "' + last.name + '" is loaded now.'
+      + (report.skipped.length ? ' ' + report.skipped.length + ' setting' + (report.skipped.length > 1 ? 's were' : ' was') + ' ignored.' : ''));
+    return report;
+  } catch (e) { toast('Could not import: ' + (e.message || e)); return null; }
 }
 function llmSettings(then) {
   const cfg = llmCfg() || { provider: 'gemini', key: '', model: LLM_PROVIDERS.gemini.model, baseUrl: '' };
@@ -835,9 +872,18 @@ function llmCreate() {
       reason.textContent = text.replace(/```[\s\S]*?```/g, '').replace(/\{"format"[\s\S]*\}/, '')
         .replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#{1,6}\s*/gm, '').replace(/\n{3,}/g, '\n\n').trim();
       const before = lib.length;
-      importData(data);
+      const report = importData(data);
       if (lib.length === before) throw new Error('That patch could not be loaded. See the message above.');
-      status.textContent = 'Loaded and playing. Ask for a change, or keep it.';
+      // If part of the reply could not be used, say so here rather than leaving
+      // the blocks it named sitting at their old settings with no explanation.
+      if (report && report.skipped.length) {
+        reason.append(h('p', { class: 'warn' }, report.skipped.length + ' of its settings could not be used, so those blocks kept what they had:'),
+          h('ul', { class: 'warn' }, report.skipped.slice(0, 8).map(t => h('li', {}, t))),
+          h('p', { class: 'warn' }, 'Asking again often fixes it, or say which block to correct.'));
+      }
+      status.textContent = report && report.skipped.length
+        ? 'Loaded, with ' + report.skipped.length + ' setting' + (report.skipped.length > 1 ? 's' : '') + ' ignored.'
+        : 'Loaded and playing. Ask for a change, or keep it.';
       want.disabled = false;
       want.value = '';
       want.placeholder = 'Now ask for a change, for example: give it more delay, or make it darker';

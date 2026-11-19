@@ -344,3 +344,7 @@ button.batt{background:none;color:inherit;cursor:pointer}
 #tunerbox.idle .t-needle{opacity:0}
 #tunerbox.stale .t-note,#tunerbox.stale .t-needle{opacity:.45}
 @media (prefers-reduced-motion:reduce){.t-needle{transition:none}}
+
+.reason .warn{color:var(--flag);margin:10px 0 0}
+.reason ul.warn{margin:6px 0 0;padding-left:20px}
+.reason ul.warn li{margin:2px 0}

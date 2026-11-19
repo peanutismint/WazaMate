@@ -18,7 +18,7 @@ const src = p => fs.readFileSync(path.join(root, 'src', p), 'utf8');
 // Load app.js with its data placeholder filled in, then pull out the internals
 // we want to exercise. The file guards its own init() behind a document check.
 let code = src('app.js').replace('/*__DATA__*/null', src('schema.json'));
-code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
+code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,coerce,P,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
 const mod = { exports: {} };
 new Function('module', 'localStorage', code)(mod, { getItem: () => null });
 const A = mod.exports;
@@ -76,6 +76,20 @@ for (const n of [1, 2, 3]) is(/SYS_KNOB_POS_FX/.test(cat), false, `the LLM catal
 for (const k of ['GAIN', 'BASS', 'MIDDLE', 'TREBLE', 'PRESENCE', 'VOLUME', 'TYPE']) {
   is(A.PRESET_IDS.includes('SYS_KNOB_POS_' + k), true, `the amp's ${k} knob survived the dial removal`);
 }
+
+console.log('\nReading an LLM reply');
+// Models often write the name of a type instead of its number. Taking the name
+// is what keeps a block from silently staying on its old setting.
+const nameOf = (id, n) => { const d = A.P[id], L = d.options || null; return L ? L[n + d.ofs] : null; };
+is(A.coerce('FX1_FXTYPE', 'COMP').value, 3, 'a type written as its name is understood');
+is(A.coerce('FX1_FXTYPE', 'comp').value, 3, 'the name is matched whatever its case');
+is(A.coerce('REVERB_TYPE', 'PLATE').value, 4, 'reverb types work the same way');
+is(typeof A.coerce('FX1_FXTYPE', 'ADCOMP').why, 'string', 'a name the amp does not have is reported, not dropped');
+is(typeof A.coerce('DLY2_SW', {}).why, 'string', 'a value that is not a number is reported');
+is(A.coerce('DLY_SW', 1).value, 1, 'a plain number still works');
+is(A.coerce('DLY_SW', '1').value, 1, 'a number written as text still works');
+is(A.coerce('SYS_KNOB_POS_GAIN', 400).value, A.P.SYS_KNOB_POS_GAIN.max, 'a value past the top is pulled into range');
+is(typeof A.coerce('SYS_KNOB_POS_GAIN', 400).note, 'string', 'and says so');
 
 console.log('\nSchema');
 is(A.PARAMS.length > 500, true, `${A.PARAMS.length} parameters loaded`);
