@@ -10,10 +10,8 @@ through. No app store, no install, no account.
 
 ![The WazaMate editor, showing the signal chain across the top and the Brown amp open below it](docs/screenshot.png)
 
-WazaMate is a single HTML file. Everything runs in your browser, on your own
-machine. There is no server, nothing is collected, and the only thing that ever
-leaves your browser is a patch request you deliberately send to an LLM, if you
-choose to set one up.
+WazaMate is a single HTML file with no server behind it. The only outbound
+connection it ever makes is to an LLM, and only if you choose to set one up.
 
 > Not affiliated with, endorsed by, or supported by Roland or BOSS. WAZA-AIR and
 > BOSS are trademarks of their respective owners. This is an independent project
@@ -54,7 +52,8 @@ Two ways to use it, and both are free:
 
 - **Connect an LLM once** under "New patch from an LLM". Paste an API key and
   from then on it is one dialog and a few seconds. Google Gemini has a free tier
-  and is the one to start with.
+  and is the one to start with. It remembers the conversation, so you can say
+  "I like this, now give it more delay" and it edits rather than starting over.
 - **Or copy and paste.** "Copy prompt for an LLM" copies everything needed into
   your clipboard. Paste it into whatever chatbot you already use, then bring the
   whole reply back with "Paste a patch from an LLM". No key, no setup.

@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.13. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.14. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -512,10 +512,13 @@ const LLM_PROVIDERS = {
   gemini: {
     name: 'Google Gemini', model: 'gemini-2.0-flash', keys: 'https://aistudio.google.com/apikey',
     note: 'Free tier, and confirmed to work from a web page. The best place to start.',
-    async send(cfg, prompt, signal) {
+    async send(cfg, turns, signal) {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model)}:generateContent`, {
         method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.key },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.8 } }),
+        body: JSON.stringify({
+          contents: turns.map(t => ({ role: t.role === 'assistant' ? 'model' : 'user', parts: [{ text: t.text }] })),
+          generationConfig: { temperature: 0.8 },
+        }),
       });
       const d = await readJson(r);
       return d.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
@@ -532,11 +535,11 @@ const LLM_PROVIDERS = {
   anthropic: {
     name: 'Anthropic Claude', model: 'claude-sonnet-4-5', keys: 'https://console.anthropic.com/settings/keys',
     note: 'Paid. Needs a browser-access header, which WazaMate sends for you.',
-    async send(cfg, prompt, signal) {
+    async send(cfg, turns, signal) {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST', signal,
         headers: { 'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model: cfg.model, max_tokens: 4000, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ model: cfg.model, max_tokens: 4000, messages: turns.map(t => ({ role: t.role, content: t.text })) }),
       });
       const d = await readJson(r);
       return (d.content || []).map(c => c.text || '').join('');
@@ -548,12 +551,12 @@ const LLM_PROVIDERS = {
   },
 };
 /** Shared by every OpenAI-compatible provider. */
-async function sendOpenAiStyle(cfg, prompt, signal) {
+async function sendOpenAiStyle(cfg, turns, signal) {
   const base = (cfg.baseUrl || LLM_PROVIDERS[cfg.provider].openai || '').replace(/\/+$/, '');
   if (!base) throw new Error('No endpoint address is set for this provider.');
   const r = await fetch(base + '/chat/completions', {
     method: 'POST', signal, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + cfg.key },
-    body: JSON.stringify({ model: cfg.model, temperature: 0.8, messages: [{ role: 'user', content: prompt }] }),
+    body: JSON.stringify({ model: cfg.model, temperature: 0.8, messages: turns.map(t => ({ role: t.role, content: t.text })) }),
   });
   const d = await readJson(r);
   return d.choices?.[0]?.message?.content || '';
@@ -574,10 +577,11 @@ async function readJson(r) {
 }
 const llmCfg = () => { try { return JSON.parse(localStorage.getItem('wazamate.llm') || 'null'); } catch (e) { return null; } };
 const saveLlmCfg = c => { try { localStorage.setItem('wazamate.llm', JSON.stringify(c)); } catch (e) { toast('This browser would not save the settings.'); } };
-async function askLlm(cfg, prompt, signal) {
+/** `turns` is the whole conversation so far, so a follow-up can edit what came before. */
+async function askLlm(cfg, turns, signal) {
   const p = LLM_PROVIDERS[cfg.provider];
   try {
-    const text = await (p.send ? p.send(cfg, prompt, signal) : sendOpenAiStyle(cfg, prompt, signal));
+    const text = await (p.send ? p.send(cfg, turns, signal) : sendOpenAiStyle(cfg, turns, signal));
     if (!text.trim()) throw new Error('The provider replied with nothing.');
     return text;
   } catch (e) {
@@ -586,6 +590,13 @@ async function askLlm(cfg, prompt, signal) {
     if (e instanceof TypeError) throw new Error('The browser blocked the request before it reached ' + p.name + '. This provider probably does not allow calls from a web page. Gemini is the safe choice.');
     throw e;
   }
+}
+
+/** Only what differs from Roland's defaults, so a follow-up can carry the patch without the bulk. */
+function changedParams() {
+  const out = {};
+  for (const id of PRESET_IDS) { const v = get(id); if (v !== Number(P[id].init)) out[id] = v; }
+  return out;
 }
 
 async function copyLlmPrompt() {
@@ -698,6 +709,7 @@ function llmCreate() {
   box.textContent = '';
   const want = h('textarea', { class: 'pastebox', rows: '3', 'aria-label': 'The sound you want',
     placeholder: 'A chiming delay-heavy clean tone like The Edge on U2’s Pride' });
+  let thread = []; // the whole exchange, so "now add a delay" edits what came before
   const status = h('p', { class: 'note' }), reason = h('div', { class: 'reason' });
   const buttons = h('div', { class: 'prow' });
   let ctrl = null, started = 0, timer = null;
@@ -717,7 +729,17 @@ function llmCreate() {
     timer = setInterval(() => setStage('Asking ' + LLM_PROVIDERS[cfg.provider].name), 1000);
     buttonRow(h('button', { class: 'btn', type: 'button', onclick: close }, 'Cancel'));
     try {
-      const text = await askLlm(cfg, llmPrompt(wanted), ctrl.signal);
+      // First time, send the full brief. After that, just the new request plus whatever has
+      // changed since, because the model still has the parameter list earlier in the thread.
+      const message = thread.length
+        ? wanted + '\n\nThis is a change to the patch you just gave me, so keep what works and alter only what I asked for.'
+          + '\n\nThe patch as it stands, showing only what differs from the defaults (I may have tweaked it by hand):\n'
+          + JSON.stringify(changedParams())
+          + '\n\nReply in the same two parts as before: the explanation, then the full patch as JSON in a fenced code block.'
+        : llmPrompt(wanted);
+      thread.push({ role: 'user', text: message });
+      const text = await askLlm(cfg, thread, ctrl.signal);
+      thread.push({ role: 'assistant', text });
       clearInterval(timer); timer = null; ctrl = null;
       status.textContent = 'Reading the reply';
       const data = extractJson(text);
@@ -728,25 +750,37 @@ function llmCreate() {
       const before = lib.length;
       importData(data);
       if (lib.length === before) throw new Error('That patch could not be loaded. See the message above.');
-      status.textContent = 'Loaded and playing. Keep it, or ask for something else.';
+      status.textContent = 'Loaded and playing. Ask for a change, or keep it.';
       want.disabled = false;
-      buttonRow(h('button', { class: 'btn', type: 'button', onclick: go }, 'Ask again'),
+      want.value = '';
+      want.placeholder = 'Now ask for a change, for example: give it more delay, or make it darker';
+      want.focus();
+      buttonRow(h('button', { class: 'btn', type: 'button', title: 'Forget this conversation and start from a new description', onclick: startFresh }, 'Start fresh'),
+        h('button', { class: 'btn', type: 'button', onclick: go }, 'Ask for a change'),
         h('button', { class: 'btn primary', type: 'button', onclick: close }, 'Done'));
     } catch (e) {
       clearInterval(timer); timer = null; ctrl = null;
       want.disabled = false;
+      if (thread.length && thread[thread.length - 1].role === 'user') thread.pop(); // do not keep a question that went nowhere
       status.textContent = e.name === 'AbortError' ? 'Cancelled.' : e.message;
       buttonRow(h('button', { class: 'btn', type: 'button', onclick: () => llmSettings(llmCreate) }, 'Settings'),
         h('button', { class: 'btn', type: 'button', onclick: close }, 'Close'),
         h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Try again'));
     }
   }
-  box.append(h('h2', {}, 'New patch from an LLM'),
-    h('p', {}, 'Describe the sound you are after. A song, a player, an era, or just the feel of it.'),
-    want, status, reason, buttons);
-  buttonRow(h('button', { class: 'btn', type: 'button', onclick: () => llmSettings(llmCreate) }, 'Settings'),
+  const firstButtons = () => [
+    h('button', { class: 'btn', type: 'button', onclick: () => llmSettings(llmCreate) }, 'Settings'),
     h('button', { class: 'btn', type: 'button', onclick: close }, 'Cancel'),
-    h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Create patch'));
+    h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Create patch'),
+  ];
+  function startFresh() {
+    thread = []; want.value = ''; want.placeholder = 'Describe a different sound';
+    reason.textContent = ''; status.textContent = ''; buttonRow(...firstButtons()); want.focus();
+  }
+  box.append(h('h2', {}, 'New patch from an LLM'),
+    h('p', {}, 'Describe the sound you are after. A song, a player, an era, or just the feel of it. Once it answers you can keep asking for changes, and it remembers what it built.'),
+    want, status, reason, buttons);
+  buttonRow(...firstButtons());
   $('#llm').addEventListener('close', stop, { once: true });
   $('#llm').showModal();
   want.focus();
