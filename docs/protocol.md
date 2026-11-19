@@ -139,18 +139,27 @@ does not describe them to an LLM. They modelled a physical knob the headphones
 do not have, and one value standing for two effects made every other level
 control harder to reason about.
 
-**Confirmed on hardware, 18 Nov 2026:** the dial gates audibility. With stomp
-and mod 1 both switched on and mod 1 set to tremolo, writing `1A` to
-`00 00 04 27` silenced the tremolo and writing `4E` silenced the stomp. So only
-one effect of a pair is heard, whatever the two switches say, and a patch can
-light a block up that makes no sound.
+**What these do on the WAZA-AIR is unresolved.** Two observations from
+18 Nov 2026 pull in opposite directions:
 
-Dial 3 is encoded without halves, and reverb and delay 2 carry an extra
-`FXBOX_SEL_FX3` parameter that the other four slots do not. The likely reading
-is that the hardware follows the Katana's three buttons: two that pick one of a
-pair, one that runs both. That also makes an ordinary rig possible, since drive
-with modulation, delay and reverb has to be stomp, mod 2, delay 2 and reverb.
-Whether reverb and delay 2 really do sound together is **not yet confirmed**.
+- Writing the dial directly does change what is heard. With stomp and mod 1
+  both switched on and mod 1 set to tremolo, writing `1A` to `00 00 04 27`
+  silenced the tremolo and `4E` silenced the stomp.
+- Yet all six slots can be heard at once in ordinary use, stomp with mod 1 and
+  delay 1 with mod 2 included, without touching these addresses at all.
+
+The reading that fits both is that the dial models a physical Katana knob and
+only takes effect when it is written, while switching an effect on through its
+own patch switch leaves the balance to the firmware. If so, the right thing for
+an editor is to never write these addresses, which is what WazaMate now does.
+
+So from v0.17 the dial has no control unless **Advanced, Effect level dials**
+is switched on, it is off by default, and it is never described to an LLM.
+Nothing in normal use writes `00 00 04 27` to `29`. The values are still read,
+stored in presets and sent as part of a whole-patch load.
+
+Still open: whether a dial written by hand stays in force, and what
+`FXBOX_SEL_FX3` does, which only reverb and delay 2 carry.
 
 ### Chain order
 

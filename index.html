@@ -368,7 +368,9 @@ button.batt{background:none;color:inherit;cursor:pointer}
   <button class="btn ic" id="sysbtn" type="button" data-ic="gear" aria-label="System settings" title="System settings"><span class="lbl">System</span></button>
   <details class="menu" id="adv"><summary class="btn ic" data-ic="tools" aria-label="Advanced" title="Advanced"><span class="lbl">Advanced</span></summary>
     <div class="menu-body"><label class="switch"><input type="checkbox" id="tools">Testing tools</label>
-    <p>Shows the MIDI log, test marks on every control, Test mode, Send CONNECT and Read state.</p></div>
+    <p>Shows the MIDI log, test marks on every control, Test mode, Send CONNECT and Read state.</p>
+    <label class="switch"><input type="checkbox" id="dials">Effect level dials</label>
+    <p>Adds the shared Katana-style level dial to Stomp, Mod 1, Delay 1, Mod 2, Reverb and Delay 2. What it does on the WAZA-AIR is still unclear, so it is off by default.</p></div>
   </details>
   <button class="btn mute ic" id="mute" type="button" data-ic="mute" aria-pressed="false" aria-label="Mute" title="Mute"><span class="lbl">Mute</span></button>
   <button class="btn primary ic" id="connect" type="button" data-ic="bt" aria-label="Connect headphones" title="Connect headphones"><span class="lbl">Connect headphones</span></button>
@@ -945,8 +947,6 @@ function llmPrompt(wanted) {
     '- Switch each effect on or off explicitly with its SW parameter, 1 is on and 0 is off.',
     '- Set the TYPE of any effect you switch on.',
     '- Set how much of each effect is heard with that effect\'s own level parameter, such as ODDS_EFFECT_LEVEL or the chosen type\'s LEVEL.',
-    '- Stomp and Mod 1 cannot sound at the same time, and neither can Delay 1 and Mod 2: each of those two pairs shares one hardware selector, so only one of the pair is heard. Reverb and Delay 2 are not paired this way and can both sound.',
-    '- So if you want a drive and a modulation together, use Stomp with Mod 2, not Mod 1. If you want a delay and a modulation together, use Delay 2 with Mod 1 or Mod 2. Switch the unused one of a pair off.',
     '- Mod 2 repeats Mod 1: every FX1_ parameter below also exists as FX2_ with the same range, and its switch and type are FX2_SW and FX2_FXTYPE.',
     '- Delay 2 repeats Delay 1: every DLY_ parameter below also exists as DLY2_, and its switch and type are DLY2_SW and DLY2_TYPE.',
     '- Anything you leave out keeps the value it already has, so to switch an effect off, say so with its SW parameter rather than omitting it.',
@@ -1388,7 +1388,7 @@ function tempoBar(b) {
 /* ------------------------------------------------------------ controls */
 let R = {};
 const reg = (id, fn) => { (R[id] = R[id] || []).push(fn); fn(); };
-function notify(id) { (R[id] || []).forEach(f => f()); if (STRUCT.has(id)) scheduleRender(); else if (id === 'SEND_RETURN_MODE') renderChain(); }
+function notify(id) { (R[id] || []).forEach(f => f()); if (STRUCT.has(id)) scheduleRender(); else if (/^SYS_KNOB_POS_FX|^SEND_RETURN_MODE$/.test(id)) renderChain(); }
 function vknob(o) { // o: label,min,max,get,set,fmt,ids[],stId,zero,big
   const el = h('div', { class: 'ctl knob' + (o.big ? ' big' : ''), tabindex: 0, role: 'slider', 'aria-label': o.label, 'data-st': o.stId ? statusOf(o.stId) : 'ok' });
   const val = h('div', { class: 'k-val' }), lab = h('div', { class: 'k-lab' }, o.label);
@@ -1444,12 +1444,12 @@ function swButton(id, cls, label) { // footswitch or power button bound to an ef
 
 /* ------------------------------------------------------------ blocks */
 const SLOTS = {
-  booster: { label: 'Stomp', cat: 'drive', sw: 'ODDS_SW', type: 'ODDS_TYPE', asg: 'FX1A', groups: ['BOOSTER'] },
-  mod: { label: 'Mod 1', cat: 'mod', sw: 'FX1_SW', type: 'FX1_FXTYPE', asg: 'FX1B', prefix: 'MOD' },
-  delay: { label: 'Delay 1', cat: 'delay', sw: 'DLY_SW', type: 'DLY_TYPE', asg: 'FX2A', prefix: 'DELAY' },
-  fx: { label: 'Mod 2', cat: 'mod', sw: 'FX2_SW', type: 'FX2_FXTYPE', asg: 'FX2B', prefix: 'FX' },
-  reverb: { label: 'Reverb', cat: 'reverb', sw: 'REVERB_SW', type: 'REVERB_TYPE', asg: 'FX3A', selId: 'FXBOX_SEL_FX3', groups: ['REVERB'] },
-  delay2: { label: 'Delay 2', cat: 'delay', sw: 'DLY2_SW', type: 'DLY2_TYPE', asg: 'FX3B', selId: 'FXBOX_SEL_FX3', prefix: 'DELAY2' },
+  booster: { label: 'Stomp', cat: 'drive', sw: 'ODDS_SW', type: 'ODDS_TYPE', asg: 'FX1A', button: 1, half: 'low', groups: ['BOOSTER'] },
+  mod: { label: 'Mod 1', cat: 'mod', sw: 'FX1_SW', type: 'FX1_FXTYPE', asg: 'FX1B', button: 1, half: 'high', prefix: 'MOD' },
+  delay: { label: 'Delay 1', cat: 'delay', sw: 'DLY_SW', type: 'DLY_TYPE', asg: 'FX2A', button: 2, half: 'low', prefix: 'DELAY' },
+  fx: { label: 'Mod 2', cat: 'mod', sw: 'FX2_SW', type: 'FX2_FXTYPE', asg: 'FX2B', button: 2, half: 'high', prefix: 'FX' },
+  reverb: { label: 'Reverb', cat: 'reverb', sw: 'REVERB_SW', type: 'REVERB_TYPE', asg: 'FX3A', selId: 'FXBOX_SEL_FX3', button: 3, half: 'single', groups: ['REVERB'] },
+  delay2: { label: 'Delay 2', cat: 'delay', sw: 'DLY2_SW', type: 'DLY2_TYPE', asg: 'FX3B', selId: 'FXBOX_SEL_FX3', button: 3, half: 'single', prefix: 'DELAY2' },
   amp: { label: 'Amp', cat: 'amp', type: 'SYS_KNOB_POS_TYPE' },
   eq: { label: 'EQ', cat: 'eq', sw: 'EQ_SW', groups: ['EQ'] },
   ns: { label: 'Noise gate', cat: 'dyn', sw: 'NS1_SW', groups: ['NOISE_SUPPRESSOR'] },
@@ -1484,6 +1484,13 @@ const ICON = {
   amb: '<circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="5"/><circle cx="20" cy="9" r="1.2" fill="currentColor"/>',
 };
 const svg = (name, extra = '') => `<svg viewBox="0 0 24 24" ${extra}>${ICON[name]}</svg>`;
+function dial(button) { // decode an effect knob position (Roland's editor: 0 and 52 are OFF, 1-51 first effect, 53-103 second effect)
+  const raw = get('SYS_KNOB_POS_FX' + button);
+  if (button === 3) return raw <= 0 ? { half: 'off', level: 0 } : { half: 'single', level: raw - 1 };
+  if (raw === 0 || raw === 52) return { half: 'off', level: 0 };
+  return raw < 52 ? { half: 'low', level: raw - 1 } : { half: 'high', level: raw - 53 };
+}
+
 function tile(b) {
   const s = SLOTS[b], on = s.sw ? !!get(s.sw) : b === 'amb' ? get('SEND_RETURN_MODE') > 0 : true;
   const t = b === 'amb' ? fmt('SEND_RETURN_MODE', get('SEND_RETURN_MODE')) : typeName(b);
@@ -1615,6 +1622,17 @@ function typeCard(b) {
   const c = h('div', { class: 'card ctl', 'data-st': statusOf(s.type) }, h('h3', {}, b === 'amp' ? 'Amp type' : s.label + ' type', dotEl(s.type)), grid);
   return c;
 }
+function amountCard(b) { // how much of this effect is mixed in. The headphones store it as one value per pair of effects (00 00 04 27, 28, 29).
+  const s = SLOTS[b], n = s.button, kid = 'SYS_KNOB_POS_FX' + n, max = n === 3 ? 100 : 50;
+  const other = { booster: 'mod', mod: 'booster', delay: 'fx', fx: 'delay' }[b];
+  const mine = () => { const d = dial(n); return d.half === s.half ? d.level : 0; };
+  const note = h('div', { class: 'note' });
+  const lvl = vknob({ label: 'AMOUNT', min: 0, max, get: mine, set: v => set(kid, n === 3 ? 1 + v : s.half === 'high' ? 53 + v : 1 + v), fmt: v => { const d = dial(n); return d.half === s.half ? String(v) : 'OFF'; }, ids: [kid], stId: kid });
+  reg(kid, () => { const d = dial(n); note.textContent = d.half === s.half ? '' : d.half === 'off' || !other ? 'Currently off.' : 'Currently off. The amount is set on ' + SLOTS[other].label + ' instead, the two share one setting.'; });
+  const card = h('div', { class: 'card' }, h('h3', {}, s.label + ' amount'), h('div', { class: 'hprow' }, lvl, h('div', { style: 'flex:1' }, note, h('button', { class: 'btn', type: 'button', onclick: () => set(kid, 0) }, 'Off'))));
+  if (n === 3) { const col = 'GRY'[get('FXBOX_SEL_FX3')] || 'G'; card.append(h('div', { class: 'srow', style: 'justify-content:flex-start' }, selectCtl('FXBOX_FX3_LAYER_' + col, 'AMOUNT CONTROLS'))); }
+  return card;
+}
 function legendCard() {
   const row = (st, t) => h('span', {}, h('b', { class: 'dot', 'data-st': st, style: 'cursor:default;margin:0' }), t);
   return h('div', { class: 'card legend' }, row('ok', 'Tested on your headphones'), row('untested', "From Roland's map, not tested yet"), row('flag', 'Tested, behaved oddly or you marked it wrong'),
@@ -1634,6 +1652,7 @@ function renderDetail() {
   if ((b === 'mod' || b === 'fx') && !paramsFor(b).length) main.append(h('p', { style: 'color:var(--mute)' }, 'Roland\'s map has no parameters for this type.'));
   if (b === 'sys') side.append(h('div', { class: 'card', style: 'font-size:13px;color:var(--mute)' }, 'Settings outside the signal chain. None of these have been tested on your headphones yet.'));
   if (s.type) side.append(typeCard(b));
+  if (state.dials && s.button) side.append(amountCard(b));
   if (state.tools) side.append(legendCard());
 }
 let rq = 0;
@@ -1795,12 +1814,14 @@ const UI_ICON = {
 };
 function init() {
   for (const e of document.querySelectorAll('[data-ic]')) e.insertAdjacentHTML('afterbegin', `<svg class="uic" viewBox="0 0 24 24" aria-hidden="true">${UI_ICON[e.dataset.ic]}</svg>`);
-  try { state.tools = localStorage.getItem('wazamate.tools') === '1'; state.div = JSON.parse(localStorage.getItem('wazamate.divs') || '{}'); } catch (e) { }
+  try { state.dials = localStorage.getItem('wazamate.dials') === '1'; state.tools = localStorage.getItem('wazamate.tools') === '1'; state.div = JSON.parse(localStorage.getItem('wazamate.divs') || '{}'); } catch (e) { }
   $('#battery').hidden = true;
   if (!navigator.bluetooth) $('#sync').addEventListener('click', () => showHelp('browser'));
   resetBuffers(true);
   $('#tools').checked = state.tools;
   $('#tools').addEventListener('change', e => { state.tools = e.target.checked; try { localStorage.setItem('wazamate.tools', state.tools ? '1' : '0'); } catch (err) { } setSync(state.sync); render(); });
+  $('#dials').checked = state.dials;
+  $('#dials').addEventListener('change', e => { state.dials = e.target.checked; try { localStorage.setItem('wazamate.dials', state.dials ? '1' : '0'); } catch (err) { } render(); });
   document.addEventListener('click', e => { for (const m of [$('#adv'), $('#pmenu'), $('#smenu')]) if (m.open && !m.contains(e.target)) m.open = false; });
   $('#connect').addEventListener('click', connect);
   $('#preset').addEventListener('change', e => presetLoad(e.target.value));
