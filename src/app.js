@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.16. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.17. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -147,11 +147,15 @@ function read(addr, size, ms = 1500) { // resolves with bytes, or null when the 
   });
 }
 // Edit-buffer addresses the headphones report that are missing from Roland's map (observed 2026-11-14)
-// Reading 7F 00 05 02 directly gets no answer (confirmed 2026-11-16). Roland's app lists a
-// matching running mode, batteryState = 3, alongside monoTuner = 1, so the headphones probably
-// only report these while in that mode. probeModes() tests both.
+// Battery and tuner data are push-only and gated by running mode (probe, 2026-11-18). A plain read
+// of either address gets no answer. Running mode 3 makes the headphones push 7F 00 05 02 (one byte)
+// once a second; mode 1 pushes 7F 00 03 00 (six bytes) about every 50 ms and mutes the sound, as a
+// Boss tuner does; mode 0 is normal play. The battery byte is 0 to 3, the number of cells Roland's
+// app lights (a reading of 1 matched 1 of 3 cells there).
 const BATTERY_ADDR = [0x7F, 0x00, 0x05, 0x02];
+const TUNER_ADDR = [0x7F, 0x00, 0x03, 0x00];
 const RUNNING_MODE = [0x7F, 0x00, 0x00, 0x02];
+const MODE = { play: 0, tuner: 1, battery: 3 };
 const SEEN = { 0x51: 'amp type as stored in the patch', 0x52: 'amp gain as stored in the patch', 0x54: 'amp bass as stored in the patch', 0x58: 'amp volume as stored in the patch' };
 function onMidi(m) {
   link.lastRx = Date.now();
@@ -162,6 +166,10 @@ function onMidi(m) {
   if (ok && addr[0] === 0x7F && addr[1] === 0 && addr[2] === 6 && addr[3] === 0) { // head tracking stream: 0-119, 3 degrees a step (seen on hardware, not in Roland's map)
     if (state.head == null) log('rx', m, 'Head tracking angle. Further ones are not logged.');
     state.head = data[0]; (R.__head || []).forEach(f => f()); return;
+  }
+  if (ok && addr[0] === 0x7F && addr[1] === 0 && addr[2] === 3 && addr[3] === 0 && data.length >= 6) { // tuner stream
+    if (!tuner.logged) { tuner.logged = true; log('rx', m, 'Tuner reading. Further ones are not logged.'); }
+    tunerFrame(data); return;
   }
   const name = addr[0] === 0x60 && SEEN[o] ? SEEN[o] : addr[0] === 0x60 ? owner.patch[o] : addr[0] === 0 && addr[1] === 0 ? owner.system[o] : addr[0] === 0 && addr[1] === 1 ? 'current patch' : '';
   log(ok ? 'rx' : 'er', data.length > 24 ? m.slice(0, 20) : m, (data.length > 24 ? '... ' + data.length + ' data bytes ' : '') + (name || '') + (ok ? '' : ' BAD CHECKSUM'));
@@ -237,6 +245,7 @@ async function connect() {
     await sleep(300); // give the link a moment before the first message
     await sendConnect();
     await syncAll();
+    await checkBattery();
   } catch (e) {
     const msg = String(e && e.message || e);
     if (e && e.name === 'NotFoundError' && /cancel/i.test(msg)) { setSync(link.connected ? state.sync : 'preview'); return; }
@@ -260,6 +269,7 @@ async function sendConnect() { // the two writes verified in the brief (section 
 }
 function dropped() {
   link.connected = false; link.reads = false; link.dev = null; link.chr = null; state.muted = false; state.battery = null;
+  if ($('#tuner').open) $('#tuner').close();
   for (const r of [...link.readers]) r.done(null);
   log('er', null, 'Bluetooth connection ended');
   setSync('preview'); render();
@@ -1239,13 +1249,77 @@ function showHelp(kind) {
 }
 function renderBattery() {
   const e = $('#battery'), v = state.battery;
-  // Nothing sensible to show unless a non-zero byte arrived: the format is unverified.
-  if (v == null || v === 0 || v > 100) { e.hidden = true; return; }
+  if (v == null || v > 100) { e.hidden = true; return; }
   e.hidden = false;
-  const pct = v <= 4 ? [0, 25, 50, 75, 100][v] : v;
+  // 0 to 3, matching the cells in Roland's app (checked 2026-11-18: 1 here showed as 1 of 3 cells there).
+  const pct = v <= 3 ? [5, 34, 67, 100][v] : v;
   e.style.setProperty('--fill', pct + '%');
-  e.title = 'Headphone battery, about ' + pct + '%. Roland\'s app shows four levels, and the raw value here is ' + v + '. The exact meaning is not confirmed.';
-  e.setAttribute('aria-label', 'Battery about ' + pct + ' percent');
+  e.classList.toggle('low', v === 0);
+  e.title = v <= 3 ? 'Headphone battery, ' + v + ' of 3 bars' + (v === 0 ? ', charge soon' : '') + '. Click to check again.' : 'Headphone battery, raw level ' + v + '. Click to check again.';
+  e.setAttribute('aria-label', 'Battery ' + v + ' of 3 bars, click to check again');
+}
+/** Battery level is only sent in running mode 3, so step into it, wait for one report, and step back out. */
+let batteryBusy = false;
+async function checkBattery() {
+  if (!link.connected || batteryBusy || syncing || $('#tuner').open) return;
+  batteryBusy = true;
+  try {
+    const got = new Promise(resolve => {
+      const r = { start: abs(BATTERY_ADDR), size: 1, got: new Uint8Array(1), mask: new Uint8Array(1), n: 0 };
+      r.done = v => { if (r.fin) return; r.fin = true; clearTimeout(r.timer); link.readers.splice(link.readers.indexOf(r), 1); resolve(v); };
+      link.readers.push(r); r.timer = setTimeout(() => r.done(null), 2500);
+    });
+    await tx(dt1(RUNNING_MODE, [MODE.battery]), 'Running mode 3 (battery)');
+    if (!(await got)) log('er', null, 'No battery report within 2.5 seconds');
+  } finally {
+    if (link.connected) await tx(dt1(RUNNING_MODE, [MODE.play]), 'Running mode 0 (play)');
+    batteryBusy = false;
+  }
+}
+
+/* ------------------------------------------------------------ tuner */
+// Frame layout (probe, 2026-11-18, open G read as 0x43):
+//   byte 0      note, 12 above the guitar convention (open G = 67, so octave = floor(n/12) - 2)
+//   bytes 1-4   one 16-bit value, a nibble per byte: 5000 = in tune, 100 per cent
+//   byte 5      1 when the headphones count the note as in tune (seen from -2 to +3 cents)
+//   all zero    no note
+const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+const tuner = { logged: false, last: 0, idle: null };
+function decodeTuner(d) {
+  if (!d[0]) return null;
+  const raw = (d[1] << 12) | (d[2] << 8) | (d[3] << 4) | d[4];
+  return { name: NOTE_NAMES[d[0] % 12], octave: Math.floor(d[0] / 12) - 2, cents: Math.round((raw - 5000) / 100), inTune: d[5] === 1 };
+}
+function tunerFrame(d) {
+  if (!$('#tuner').open) return;
+  const f = decodeTuner(d), box = $('#tunerbox');
+  clearTimeout(tuner.idle);
+  box.classList.toggle('idle', !f);
+  if (!f) { $('#tnote').firstChild.textContent = '–'; $('#toct').textContent = ''; $('#tcents').textContent = 'Play a note'; box.classList.remove('ok', 'flat', 'sharp'); return; }
+  const c = clamp(f.cents, -50, 50);
+  $('#tnote').firstChild.textContent = f.name;
+  $('#toct').textContent = f.octave;
+  $('#tneedle').style.setProperty('--c', c);
+  $('#tcents').textContent = f.inTune ? 'In tune' : (f.cents > 0 ? '+' : '') + f.cents + ' cents' + (f.cents > 0 ? ', sharp' : ', flat');
+  box.classList.toggle('ok', f.inTune);
+  box.classList.toggle('sharp', !f.inTune && f.cents > 0);
+  box.classList.toggle('flat', !f.inTune && f.cents < 0);
+  // The headphones go quiet once a note has settled, so dim the reading rather than clear it.
+  tuner.idle = setTimeout(() => box.classList.add('stale'), 3000); box.classList.remove('stale');
+}
+async function openTuner() {
+  if (!link.connected) return toast('Connect the headphones first.');
+  const dlg = $('#tuner');
+  if (dlg.open) return;
+  tuner.logged = false;
+  tunerFrame([0, 0, 0, 0, 0, 0]);
+  dlg.showModal();
+  tunerFrame([0, 0, 0, 0, 0, 0]);
+  await tx(dt1(RUNNING_MODE, [MODE.tuner]), 'Running mode 1 (tuner)');
+}
+async function tunerClosed() { // runs however the dialog closes: button, Escape, or a dropped connection
+  clearTimeout(tuner.idle);
+  if (link.connected) await tx(dt1(RUNNING_MODE, [MODE.play]), 'Running mode 0 (play)');
 }
 /** Puts the headphones into their battery and tuner modes briefly, logging whatever they send. */
 async function probeModes() {
@@ -1282,6 +1356,7 @@ const UI_ICON = {
   imp: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',
   blank: '<rect x="4" y="3" width="16" height="18" rx="2"/>',
   paste: '<rect x="7" y="4" width="11" height="16" rx="2"/><path d="M11 4V3h3v1M4 8v11a2 2 0 0 0 2 2h1"/>',
+  fork: '<path d="M3.5 17a8.5 8.5 0 0 1 17 0"/><path d="M12 17l3.5-6.5"/><circle cx="12" cy="17" r="1.2" fill="currentColor"/>',
   spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/>', exp: '<path d="M12 15V3M7 8l5-5 5 5M4 20h16"/>',
 };
 function init() {
@@ -1311,6 +1386,11 @@ function init() {
   $('#sendraw').addEventListener('click', () => { const m = parseHex($('#raw').value); if (!m) return toast('Type hex bytes, for example F0 41 ... F7.'); tx(m, 'Raw message'); });
   $('#senddt1').addEventListener('click', () => { const m = parseHex($('#raw').value); if (!m || m.length < 5 || m.some(n => n > 127)) return toast('Type 4 address bytes and then the data bytes, all 00 to 7F.'); tx(dt1(m.slice(0, 4), m.slice(4)), 'Raw DT1'); });
   $('#probe').addEventListener('click', probeModes);
+  $('#tunerbtn').addEventListener('click', openTuner);
+  $('#tclose').addEventListener('click', () => $('#tuner').close());
+  $('#tuner').addEventListener('close', tunerClosed);
+  $('#battery').addEventListener('click', checkBattery);
+  window.addEventListener('pagehide', () => { if ($('#tuner').open && link.connected) tx(dt1(RUNNING_MODE, [MODE.play]), 'Running mode 0 (play)'); });
   $('#copylog').addEventListener('click', () => navigator.clipboard.writeText(logs.map(l => l.line).join('\n')).then(() => toast('Log copied.')));
   $('#copymarks').addEventListener('click', () => { const out = Object.entries(marks).map(([id, m]) => `${m === 'ok' ? 'WORKS' : 'WRONG'}  ${id}  ${P[id] ? hex(addrOf(P[id])) : ''}`).join('\n') || 'No marks yet.'; navigator.clipboard.writeText(out).then(() => toast('Test results copied. Paste them into the chat.')); });
   setSync('preview'); render();

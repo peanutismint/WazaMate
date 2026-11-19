@@ -176,14 +176,31 @@ is inferred from the wrap rather than documented.
 
 ### Battery and tuner
 
-**Confirmed.** A plain read of `7F 00 05 02`, which Roland's app calls
-`batteryState`, gets no answer at all.
+**Confirmed** by a probe on 2026-11-18. Both are push-only and switched on by
+running mode, `7F 00 00 02`. A plain read of either address gets no answer.
 
-That same constants file lists running-mode values `batteryState: 3` and
-`monoTuner: 1`, in the enum whose other value we already use when the handshake
-writes `00` to running mode `7F 00 00 02`. The likely explanation is that the
-headphones report battery level and tuner pitch only while in those modes, not
-on demand. Untested.
+| Running mode | Effect |
+| --- | --- |
+| `00` | Normal play. The CONNECT handshake writes this. |
+| `01` | Tuner. Sound is muted. The headphones push `7F 00 03 00` about every 50 ms while a note sounds, less often once it settles. |
+| `03` | Battery. The headphones push `7F 00 05 02` once a second. |
+
+**Tuner frame**, six data bytes:
+
+| Byte | Meaning |
+| --- | --- |
+| 0 | Note. Open G (G3) reads `43` (67), so the octave is `floor(n / 12) - 2`. |
+| 1 to 4 | One 16-bit value, a nibble per byte. `5000` is in tune, 100 per cent, so cents = (value - 5000) / 100. |
+| 5 | `01` when the headphones count the note as in tune. Seen set from -2 to +3 cents. |
+
+All six bytes zero means no note. The headphones send that on entering and
+leaving tuner mode.
+
+**Battery** is one byte, 0 to 3: the number of cells Roland's app lights. A
+reading of `01` showed as 1 of 3 cells there, with the headphones' LED green
+and not on USB power. Whether entering mode 3 interrupts the sound is not yet
+known, so WazaMate only steps into it for about a second, on connect and when
+the battery icon is clicked.
 
 ### Addresses missing from Roland's map
 

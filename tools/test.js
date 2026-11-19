@@ -18,7 +18,7 @@ const src = p => fs.readFileSync(path.join(root, 'src', p), 'utf8');
 // Load app.js with its data placeholder filled in, then pull out the internals
 // we want to exercise. The file guards its own init() behind a document check.
 let code = src('app.js').replace('/*__DATA__*/null', src('schema.json'));
-code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,llmPrompt,kindOf,fmt,PATCH_SIZE};';
+code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,llmPrompt,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
 const mod = { exports: {} };
 new Function('module', 'localStorage', code)(mod, { getItem: () => null });
 const A = mod.exports;
@@ -78,6 +78,18 @@ is(A.PATCH_SIZE, 2335, 'patch size matches Roland\'s map');
 is(A.paramsFor('reverb').length > 0, true, 'reverb has parameters');
 is(A.kindOf('REVERB_TYPE'), 'select', 'reverb type renders as a list');
 is(A.fmt('FX1_LIMITER_RATIO', 11), '5:1', 'Roland\'s own display labels are used');
+
+console.log('\nTuner and battery (probe, 2026-11-18)');
+// Captured frames: open G, then the first probe's note (an open D, by the octave).
+const tn = d => { const f = A.decodeTuner(d); return f ? `${f.name}${f.octave} ${f.cents} ${f.inTune}` : 'none'; };
+is(tn([0x43, 0x01, 0x07, 0x00, 0x0C, 0x00]), 'G3 9 false', 'open G, settling sharp');
+is(tn([0x43, 0x01, 0x04, 0x0B, 0x04, 0x01]), 'G3 3 true', 'open G at +3, in-tune flag set');
+is(tn([0x43, 0x01, 0x05, 0x01, 0x08, 0x00]), 'G3 4 false', 'open G at +4, flag clear');
+is(tn([0x3E, 0x01, 0x02, 0x0C, 0x00, 0x01]), 'D3 -2 true', 'D at -2 cents');
+is(tn([0x3D, 0x02, 0x05, 0x08, 0x00, 0x00]), 'C♯3 46 false', 'top nibble in byte 1');
+is(tn([0, 0, 0, 0, 0, 0]), 'none', 'all zero is no note');
+is(A.hex(A.dt1(A.RUNNING_MODE, [1])), 'F0 41 00 00 00 00 6A 12 7F 00 00 02 01 7E F7', 'running mode 1 (tuner), as sent in the probe');
+is(A.hex(A.dt1(A.RUNNING_MODE, [3])), 'F0 41 00 00 00 00 6A 12 7F 00 00 02 03 7C F7', 'running mode 3 (battery), as sent in the probe');
 
 console.log(failed ? `\n${failed} check(s) failed\n` : '\nAll checks passed\n');
 process.exit(failed ? 1 : 0);

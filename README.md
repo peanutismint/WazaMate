@@ -43,6 +43,13 @@ memories when you are happy with it.
 both delays, but each keeps its own note value, so you can run Delay 1 at a
 dotted 1/8 against Delay 2 at a 1/4 and re-tap without losing the relationship.
 
+**Tune up.** The tuner button opens the headphones' own tuner: the note, a
+needle, and how many cents sharp or flat you are. It turns green when the
+headphones count the note as in tune. Your sound is muted while it is open, as
+it is on the headphones.
+
+![The tuner, reading G and in tune](docs/screenshot-tuner.png)
+
 **Let an LLM build you a patch.** Describe the sound you want, "a chiming
 delay-heavy clean tone like The Edge on Pride", and get a patch back that loads
 straight away so you can hear it. It explains its choices too, which amp, which

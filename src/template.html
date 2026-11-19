@@ -10,14 +10,15 @@
 </head>
 <body>
 <header class="bar">
-  <div class="brand">WazaMate<small>v0.16</small></div>
+  <div class="brand">WazaMate<small>v0.17</small></div>
   <div class="patches" id="patches" role="group" aria-label="Patch"></div>
   <div class="grow"></div>
   <span class="chip preview" id="sync"><b></b><span></span></span>
-  <span class="batt" id="battery" role="img" hidden><i></i></span>
+  <button class="batt" id="battery" type="button" hidden><i></i></button>
   <label class="switch toolonly" title="Lets untested controls send to the headphones"><input type="checkbox" id="test">Test mode</label>
   <button class="btn" id="readbtn" type="button" hidden title="Ask the headphones for their current settings">Read state</button>
   <button class="btn" id="hs" type="button" hidden title="Send the two CONNECT messages again">Send CONNECT</button>
+  <button class="btn ic only tunerbtn" id="tunerbtn" type="button" data-ic="fork" aria-label="Tuner" title="Tuner. Mutes your sound while it is open, as on the headphones."></button>
   <button class="btn ic" id="sysbtn" type="button" data-ic="gear" aria-label="System settings" title="System settings"><span class="lbl">System</span></button>
   <details class="menu" id="adv"><summary class="btn ic" data-ic="tools" aria-label="Advanced" title="Advanced"><span class="lbl">Advanced</span></summary>
     <div class="menu-body"><label class="switch"><input type="checkbox" id="tools">Testing tools</label>
@@ -71,6 +72,16 @@
   <div id="log"></div>
 </details>
 <dialog class="help" id="help"><div id="helpbox"></div></dialog>
+<dialog class="help tuner" id="tuner" aria-label="Tuner">
+  <div id="tunerbox" class="idle">
+    <div class="t-note" id="tnote">–<sub id="toct"></sub></div>
+    <div class="t-meter" aria-hidden="true"><div class="t-zone"></div><i class="t-needle" id="tneedle"></i>
+      <span style="left:0">-50</span><span style="left:25%">-25</span><span style="left:50%">0</span><span style="left:75%">+25</span><span style="left:100%">+50</span></div>
+    <div class="t-cents" id="tcents" role="status">Play a note</div>
+    <p class="note">Your sound is muted while the tuner is open, the same as using the tuner on the headphones.</p>
+    <button class="btn primary" id="tclose" type="button">Close tuner</button>
+  </div>
+</dialog>
 <dialog class="help" id="llm"><div id="llmbox"></div></dialog>
 <div class="toast" id="toast" role="status"></div>
 <script>
