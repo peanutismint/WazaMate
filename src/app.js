@@ -149,8 +149,8 @@ function read(addr, size, ms = 1500) { // resolves with bytes, or null when the 
 // Edit-buffer addresses the headphones report that are missing from Roland's map (observed 2026-11-14)
 // Battery and tuner data are push-only and gated by running mode (probe, 2026-11-18). A plain read
 // of either address gets no answer. Running mode 3 makes the headphones push 7F 00 05 02 (one byte)
-// once a second; mode 1 pushes 7F 00 03 00 (six bytes) about every 50 ms and mutes the sound, as a
-// Boss tuner does; mode 0 is normal play. The battery byte is 0 to 3, the number of cells Roland's
+// once a second; mode 1 pushes 7F 00 03 00 (six bytes) about every 50 ms, and the
+// sound keeps playing (checked 2026-11-18); mode 0 is normal play. The battery byte is 0 to 3, the number of cells Roland's
 // app lights (a reading of 1 matched 1 of 3 cells there).
 const BATTERY_ADDR = [0x7F, 0x00, 0x05, 0x02];
 const TUNER_ADDR = [0x7F, 0x00, 0x03, 0x00];

@@ -364,7 +364,7 @@ button.batt{background:none;color:inherit;cursor:pointer}
   <label class="switch toolonly" title="Lets untested controls send to the headphones"><input type="checkbox" id="test">Test mode</label>
   <button class="btn" id="readbtn" type="button" hidden title="Ask the headphones for their current settings">Read state</button>
   <button class="btn" id="hs" type="button" hidden title="Send the two CONNECT messages again">Send CONNECT</button>
-  <button class="btn ic only tunerbtn" id="tunerbtn" type="button" data-ic="fork" aria-label="Tuner" title="Tuner. Mutes your sound while it is open, as on the headphones."></button>
+  <button class="btn ic only tunerbtn" id="tunerbtn" type="button" data-ic="fork" aria-label="Tuner" title="Tuner"></button>
   <button class="btn ic" id="sysbtn" type="button" data-ic="gear" aria-label="System settings" title="System settings"><span class="lbl">System</span></button>
   <details class="menu" id="adv"><summary class="btn ic" data-ic="tools" aria-label="Advanced" title="Advanced"><span class="lbl">Advanced</span></summary>
     <div class="menu-body"><label class="switch"><input type="checkbox" id="tools">Testing tools</label>
@@ -426,7 +426,6 @@ button.batt{background:none;color:inherit;cursor:pointer}
     <div class="t-meter" aria-hidden="true"><div class="t-zone"></div><i class="t-needle" id="tneedle"></i>
       <span style="left:0">-50</span><span style="left:25%">-25</span><span style="left:50%">0</span><span style="left:75%">+25</span><span style="left:100%">+50</span></div>
     <div class="t-cents" id="tcents" role="status">Play a note</div>
-    <p class="note">Your sound is muted while the tuner is open, the same as using the tuner on the headphones.</p>
     <button class="btn primary" id="tclose" type="button">Close tuner</button>
   </div>
 </dialog>
@@ -584,8 +583,8 @@ function read(addr, size, ms = 1500) { // resolves with bytes, or null when the 
 // Edit-buffer addresses the headphones report that are missing from Roland's map (observed 2026-11-14)
 // Battery and tuner data are push-only and gated by running mode (probe, 2026-11-18). A plain read
 // of either address gets no answer. Running mode 3 makes the headphones push 7F 00 05 02 (one byte)
-// once a second; mode 1 pushes 7F 00 03 00 (six bytes) about every 50 ms and mutes the sound, as a
-// Boss tuner does; mode 0 is normal play. The battery byte is 0 to 3, the number of cells Roland's
+// once a second; mode 1 pushes 7F 00 03 00 (six bytes) about every 50 ms, and the
+// sound keeps playing (checked 2026-11-18); mode 0 is normal play. The battery byte is 0 to 3, the number of cells Roland's
 // app lights (a reading of 1 matched 1 of 3 cells there).
 const BATTERY_ADDR = [0x7F, 0x00, 0x05, 0x02];
 const TUNER_ADDR = [0x7F, 0x00, 0x03, 0x00];

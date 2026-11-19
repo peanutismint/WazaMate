@@ -45,8 +45,8 @@ dotted 1/8 against Delay 2 at a 1/4 and re-tap without losing the relationship.
 
 **Tune up.** The tuner button opens the headphones' own tuner: the note, a
 needle, and how many cents sharp or flat you are. It turns green when the
-headphones count the note as in tune. Your sound is muted while it is open, as
-it is on the headphones.
+headphones count the note as in tune. Your sound keeps playing while it is
+open, so you can tune without taking the headphones off.
 
 ![The tuner, reading G and in tune](docs/screenshot-tuner.png)
 

@@ -198,7 +198,7 @@ running mode, `7F 00 00 02`. A plain read of either address gets no answer.
 | Running mode | Effect |
 | --- | --- |
 | `00` | Normal play. The CONNECT handshake writes this. |
-| `01` | Tuner. Sound is muted. The headphones push `7F 00 03 00` about every 50 ms while a note sounds, less often once it settles. |
+| `01` | Tuner. Sound keeps playing. The headphones push `7F 00 03 00` about every 50 ms while a note sounds, less often once it settles. |
 | `03` | Battery. The headphones push `7F 00 05 02` once a second. |
 
 **Tuner frame**, six data bytes:
