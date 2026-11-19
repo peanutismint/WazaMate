@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.14. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.15. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -576,8 +576,9 @@ async function readJson(r) {
   if (!r.ok) {
     const msg = d?.error?.message || d?.message || text.slice(0, 200) || ('HTTP ' + r.status);
     if (r.status === 401 || r.status === 403) throw new Error('The provider rejected the key: ' + msg);
-    if (r.status === 404) throw new Error('No such model. Check the model name in Settings: ' + msg);
-    if (r.status === 429) throw new Error('Rate limit or quota reached. Wait a moment, or try a different provider: ' + msg);
+    if (r.status === 404) throw new Error('No such model. Open Settings and press "Load models" to see what this key can use. ' + msg);
+    if (r.status === 429) throw new Error('Rate limit or quota reached. Wait a moment, or try a different model: ' + msg);
+    if (r.status >= 500) throw new Error('The provider is having trouble, which is usually temporary: ' + msg);
     throw new Error(msg);
   }
   if (!d) throw new Error('The provider sent something that was not JSON.');
@@ -585,19 +586,53 @@ async function readJson(r) {
 }
 const llmCfg = () => { try { return JSON.parse(localStorage.getItem('wazamate.llm') || 'null'); } catch (e) { return null; } };
 const saveLlmCfg = c => { try { localStorage.setItem('wazamate.llm', JSON.stringify(c)); } catch (e) { toast('This browser would not save the settings.'); } };
+/** Everything the LLM layer does goes in the same log as the MIDI, minus the key. */
+const llmLog = (cls, text) => log(cls, null, 'LLM: ' + text);
+
 /** `turns` is the whole conversation so far, so a follow-up can edit what came before. */
 async function askLlm(cfg, turns, signal) {
   const p = LLM_PROVIDERS[cfg.provider];
+  const size = turns.reduce((n, t) => n + t.text.length, 0);
+  const started = Date.now();
+  llmLog('tx', `asking ${p.name}, model "${cfg.model}", ${turns.length} message${turns.length > 1 ? 's' : ''}, ${(size / 1024).toFixed(1)} KB`);
   try {
     const text = await (p.send ? p.send(cfg, turns, signal) : sendOpenAiStyle(cfg, turns, signal));
-    if (!text.trim()) throw new Error('The provider replied with nothing.');
+    if (!text.trim()) throw new Error('The provider replied with nothing. It may have refused the request without saying why.');
+    llmLog('rx', `reply after ${((Date.now() - started) / 1000).toFixed(1)}s, ${(text.length / 1024).toFixed(1)} KB`);
     return text;
   } catch (e) {
-    if (e.name === 'AbortError') throw e;
+    const secs = ((Date.now() - started) / 1000).toFixed(1);
+    if (e.name === 'AbortError') { llmLog('er', `cancelled or timed out after ${secs}s`); throw e; }
     // A blocked cross-origin request surfaces as a bare TypeError with nothing useful in it.
-    if (e instanceof TypeError) throw new Error('The browser blocked the request before it reached ' + p.name + '. This provider probably does not allow calls from a web page. Gemini is the safe choice.');
+    if (e instanceof TypeError) {
+      llmLog('er', `the browser blocked the request to ${p.name} after ${secs}s (cross-origin)`);
+      throw new Error('The browser blocked the request before it reached ' + p.name + '. This provider probably does not allow calls from a web page. Gemini is the safe choice.');
+    }
+    llmLog('er', `failed after ${secs}s: ${e.message}`);
     throw e;
   }
+}
+
+/** Asks the provider which models this key can actually use, so nobody has to guess a name. */
+async function listModels(cfg) {
+  const p = LLM_PROVIDERS[cfg.provider];
+  llmLog('tx', 'asking ' + p.name + ' which models the key can use');
+  let names = [];
+  if (cfg.provider === 'gemini') {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': cfg.key } });
+    const d = await readJson(r);
+    names = (d.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => String(m.name).replace(/^models\//, ''));
+  } else if (cfg.provider === 'anthropic') {
+    const r = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' } });
+    names = ((await readJson(r)).data || []).map(m => m.id);
+  } else {
+    const base = (cfg.baseUrl || p.openai || '').replace(/\/+$/, '');
+    if (!base) throw new Error('Set the endpoint address first.');
+    const r = await fetch(base + '/models', { headers: { authorization: 'Bearer ' + cfg.key } });
+    names = ((await readJson(r)).data || []).map(m => m.id);
+  }
+  llmLog('rx', names.length + ' model' + (names.length === 1 ? '' : 's') + ' offered');
+  return names.sort();
 }
 
 async function copyLlmPrompt() {
@@ -670,13 +705,36 @@ function llmSettings(then) {
   const key = h('input', { type: 'password', value: cfg.key || '', placeholder: 'Paste your API key', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'API key' });
   const model = h('input', { type: 'text', value: cfg.model || '', placeholder: 'Model name', spellcheck: 'false', 'aria-label': 'Model' });
   const base = h('input', { type: 'text', value: cfg.baseUrl || '', placeholder: 'https://example.com/v1', spellcheck: 'false', 'aria-label': 'Endpoint address' });
-  const note = h('p', { class: 'note' }), keyLink = h('p', {}), baseRow = h('label', { class: 'lrow' }, h('span', {}, 'Endpoint'), base);
+  const note = h('p', { class: 'note' }), keyLink = h('p', {});
+  const baseRow = h('label', { class: 'lrow' }, h('span', {}, 'Endpoint'), base);
+  const baseNote = h('p', { class: 'note' }, 'Only for an endpoint of your own, such as a local model. Give the address ending in /v1, with no /chat/completions after it.');
+  const modelNote = h('p', { class: 'note' }, 'Model names change often. If the provider says there is no such model, press Load models.');
+  const picker = h('select', { 'aria-label': 'Models this key can use' });
+  const pickerRow = h('label', { class: 'lrow', hidden: '' }, h('span', {}, 'Available'), picker);
+  picker.addEventListener('change', () => { if (picker.value) model.value = picker.value; });
+  const loadBtn = h('button', { class: 'btn', type: 'button' }, 'Load models');
+  loadBtn.addEventListener('click', async () => {
+    const probe = { provider: sel.value, key: key.value.trim(), model: model.value.trim(), baseUrl: base.value.trim() };
+    if (!probe.key && probe.provider !== 'custom') return toast('Paste an API key first.');
+    loadBtn.disabled = true;
+    modelNote.textContent = 'Asking the provider which models it offers...';
+    try {
+      const names = await listModels(probe);
+      picker.textContent = '';
+      picker.append(h('option', { value: '' }, names.length + ' available, pick one'));
+      for (const n of names) picker.append(h('option', { value: n }, n));
+      pickerRow.hidden = false;
+      modelNote.textContent = names.includes(probe.model) ? 'The model you have is on the list.' : 'Your current model is not on the list, so pick one above.';
+    } catch (e) { modelNote.textContent = 'Could not fetch the list: ' + e.message; }
+    loadBtn.disabled = false;
+  });
   const refresh = () => {
     const p = LLM_PROVIDERS[sel.value];
     note.textContent = p.note;
     keyLink.textContent = '';
     if (p.keys) keyLink.append('Get a key: ', h('a', { href: p.keys, target: '_blank', rel: 'noopener' }, p.keys));
-    baseRow.hidden = sel.value !== 'custom';
+    baseRow.hidden = baseNote.hidden = sel.value !== 'custom';
+    pickerRow.hidden = true;
     if (!model.value || model.value === LLM_PROVIDERS[cfg.provider]?.model) model.value = p.model;
   };
   sel.addEventListener('change', refresh);
@@ -684,9 +742,9 @@ function llmSettings(then) {
     h('p', {}, 'WazaMate has no server, so your key is kept in this browser and sent straight to the provider you pick. It is never logged, never exported, and never reaches anyone else.'),
     h('label', { class: 'lrow' }, h('span', {}, 'Provider'), sel), note,
     h('label', { class: 'lrow' }, h('span', {}, 'API key'), key), keyLink,
-    h('label', { class: 'lrow' }, h('span', {}, 'Model'), model),
-    h('p', { class: 'note' }, 'Model names change. If the provider says there is no such model, check its documentation and put the current name here.'),
-    baseRow,
+    h('label', { class: 'lrow' }, h('span', {}, 'Model'), model, loadBtn),
+    pickerRow, modelNote,
+    baseRow, baseNote,
     h('div', { class: 'prow' },
       h('button', { class: 'btn', type: 'button', onclick: () => { $('#llm').close(); } }, 'Cancel'),
       h('button', { class: 'btn', type: 'button', onclick: () => { localStorage.removeItem('wazamate.llm'); $('#llm').close(); toast('Key removed from this browser.'); } }, 'Forget my key'),
@@ -713,9 +771,9 @@ function llmCreate() {
   let thread = []; // the whole exchange, so "now add a delay" edits what came before
   const status = h('p', { class: 'note' }), reason = h('div', { class: 'reason' });
   const buttons = h('div', { class: 'prow' });
-  let ctrl = null, started = 0, timer = null;
-  const setStage = t => { status.textContent = t + ' (' + Math.round((Date.now() - started) / 1000) + 's)'; };
-  const stop = () => { clearInterval(timer); timer = null; if (ctrl) { ctrl.abort(); ctrl = null; } };
+  let ctrl = null, started = 0, timer = null, giveUp = null, timedOut = false;
+  const setStage = t => { const s = Math.round((Date.now() - started) / 1000); status.textContent = t + ' (' + s + 's' + (s > 25 ? ', slower than usual' : '') + ')'; };
+  const stop = () => { clearInterval(timer); timer = null; clearTimeout(giveUp); if (ctrl) { ctrl.abort(); ctrl = null; } };
   const buttonRow = (...kids) => { buttons.textContent = ''; buttons.append(...kids); };
   const close = () => { stop(); $('#llm').close(); };
 
@@ -723,6 +781,9 @@ function llmCreate() {
     const wanted = want.value.trim();
     if (!wanted) return toast('Describe the sound you want first.');
     ctrl = new AbortController();
+    timedOut = false;
+    clearTimeout(giveUp);
+    giveUp = setTimeout(() => { if (ctrl) { timedOut = true; ctrl.abort(); } }, 90000); // never hang forever
     started = Date.now();
     want.disabled = true;
     reason.textContent = '';
@@ -740,6 +801,7 @@ function llmCreate() {
         : llmPrompt(wanted);
       thread.push({ role: 'user', text: message });
       const text = await askLlm(cfg, thread, ctrl.signal);
+      clearTimeout(giveUp);
       thread.push({ role: 'assistant', text });
       clearInterval(timer); timer = null; ctrl = null;
       status.textContent = 'Reading the reply';
@@ -762,8 +824,11 @@ function llmCreate() {
     } catch (e) {
       clearInterval(timer); timer = null; ctrl = null;
       want.disabled = false;
+      clearTimeout(giveUp);
       if (thread.length && thread[thread.length - 1].role === 'user') thread.pop(); // do not keep a question that went nowhere
-      status.textContent = e.name === 'AbortError' ? 'Cancelled.' : e.message;
+      status.textContent = e.name !== 'AbortError' ? e.message
+        : timedOut ? 'No reply after 90 seconds, so the request was dropped. The model may be overloaded. Try again, or pick another one in Settings.'
+          : 'Cancelled.';
       buttonRow(h('button', { class: 'btn', type: 'button', onclick: () => llmSettings(llmCreate) }, 'Settings'),
         h('button', { class: 'btn', type: 'button', onclick: close }, 'Close'),
         h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Try again'));

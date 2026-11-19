@@ -151,8 +151,14 @@ sees your key or your request, and neither does anyone else.
 | Anything OpenAI-compatible | Depends | A local model, or a proxy of your own |
 | **OpenAI / ChatGPT** | **No** | Refuses browser calls outright, no key can fix it |
 
-Model names change faster than this README. If a provider says there is no such
-model, put the current name in the Model box.
+Model names change faster than this README. Press **Load models** next to the
+Model box and WazaMate asks the provider which models your key can actually use,
+then lets you pick one. Worth doing on the first run.
+
+If a request fails or just sits there, turn on **Testing tools** under Advanced.
+Every request, reply and failure is written to the same log as the MIDI, with
+timings and sizes, and never your key. A request that gets no reply within
+ninety seconds is dropped rather than left hanging.
 
 If you would rather not hand over a key at all, the copy and paste route does
 exactly the same job with your existing chatbot.
