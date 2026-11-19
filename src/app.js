@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.17. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.18. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -364,6 +364,8 @@ const kindOf = id => { const o = optionList(id), p = P[id]; return o ? 'select' 
 
 /* ------------------------------------------------------------ preset library (kept in this browser, shareable as files) */
 const PRESET_IDS = PARAMS.filter(p => p.bytes !== 16 && (p.scope === 'patch' || /^SYS_KNOB_POS_/.test(p.id))).map(p => p.id);
+// System parameters resent after a whole-patch push. The three effect dials are left out on purpose, see sendWholePatch.
+const SYSTEM_SEND_IDS = PRESET_IDS.filter(id => P[id].scope === 'system' && !/^SYS_KNOB_POS_FX[123]$/.test(id));
 let lib = [];
 try { lib = JSON.parse(localStorage.getItem('wazamate.presets') || '[]'); } catch (e) { }
 const saveLib = () => { try { localStorage.setItem('wazamate.presets', JSON.stringify(lib)); } catch (e) { toast('Could not save presets in this browser.'); } };
@@ -387,7 +389,14 @@ function sendWholePatch(what) { // pushes the whole edit buffer to the headphone
     tx(dt1(unabs(abs([0x60, 0, 0, 0]) + o), Array.from(buf.patch.slice(o, e))), 'Patch bytes ' + o + ' to ' + (e - 1));
     o = e;
   }
-  for (const pid of PRESET_IDS) if (P[pid].scope === 'system' && !(pid === 'SYS_KNOB_POS_VOLUME' && state.muted)) tx(dt1(addrOf(P[pid]), [rawOf(P[pid])]), nice(pid));
+  // The three effect dials (04 27-29) are deliberately not sent. Writing one points the
+  // hardware at a single effect of its pair and silences the other, so a stale value here
+  // switched blocks off about half a second after every patch load. Left alone, the
+  // headphones manage the balance themselves and all six slots stay audible.
+  for (const pid of SYSTEM_SEND_IDS) {
+    if (pid === 'SYS_KNOB_POS_VOLUME' && state.muted) continue;
+    tx(dt1(addrOf(P[pid]), [rawOf(P[pid])]), nice(pid));
+  }
   link.chain.then(() => toast(link.connected ? what + ' sent to the headphones. Use "Store in memory" to keep it there.' : what + ' loaded (preview).'));
 }
 function applyParams(params) {

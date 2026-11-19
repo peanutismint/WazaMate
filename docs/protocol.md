@@ -139,27 +139,30 @@ does not describe them to an LLM. They modelled a physical knob the headphones
 do not have, and one value standing for two effects made every other level
 control harder to reason about.
 
-**What these do on the WAZA-AIR is unresolved.** Two observations from
-18 Nov 2026 pull in opposite directions:
+**Do not write these.** Confirmed 18 Nov 2026, from two observations that
+looked contradictory until the cause turned up:
 
-- Writing the dial directly does change what is heard. With stomp and mod 1
-  both switched on and mod 1 set to tremolo, writing `1A` to `00 00 04 27`
-  silenced the tremolo and `4E` silenced the stomp.
-- Yet all six slots can be heard at once in ordinary use, stomp with mod 1 and
-  delay 1 with mod 2 included, without touching these addresses at all.
+- Writing a dial does gate. With stomp and mod 1 both switched on and mod 1 set
+  to tremolo, writing `1A` to `00 00 04 27` silenced the tremolo, and `4E`
+  silenced the stomp.
+- Yet all six slots sound together in ordinary use, stomp with mod 1 and delay 1
+  with mod 2 included, as long as nothing writes these addresses.
 
-The reading that fits both is that the dial models a physical Katana knob and
-only takes effect when it is written, while switching an effect on through its
-own patch switch leaves the balance to the firmware. If so, the right thing for
-an editor is to never write these addresses, which is what WazaMate now does.
+Left alone, the headphones balance a pair themselves. A write forces the dial to
+one effect and mutes the other, and it stays forced.
 
-So from v0.17 the dial has no control unless **Advanced, Effect level dials**
-is switched on, it is off by default, and it is never described to an LLM.
-Nothing in normal use writes `00 00 04 27` to `29`. The values are still read,
-stored in presets and sent as part of a whole-patch load.
+This caused a real bug. `sendWholePatch` finished every patch load by resending
+the system knobs, these three among them, carrying whatever the previous patch
+had left in the buffer. About half a second after a load, which is how long the
+patch burst takes to drain, blocks the patch had switched on went silent and
+reported themselves off. It showed up most clearly on LLM patches, where a
+freshly chosen mod or second delay would set itself up and then disable itself.
 
-Still open: whether a dial written by hand stays in force, and what
-`FXBOX_SEL_FX3` does, which only reverb and delay 2 carry.
+From v0.17 a patch push skips `00 00 04 27` to `29`, with a test to keep them
+out, and the dial has no control unless **Advanced, Effect level dials** is
+switched on. The values are still read and kept in presets, just never sent.
+
+Still open: what `FXBOX_SEL_FX3` does, which only reverb and delay 2 carry.
 
 ### Chain order
 

@@ -18,7 +18,7 @@ const src = p => fs.readFileSync(path.join(root, 'src', p), 'utf8');
 // Load app.js with its data placeholder filled in, then pull out the internals
 // we want to exercise. The file guards its own init() behind a document check.
 let code = src('app.js').replace('/*__DATA__*/null', src('schema.json'));
-code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,llmPrompt,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
+code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
 const mod = { exports: {} };
 new Function('module', 'localStorage', code)(mod, { getItem: () => null });
 const A = mod.exports;
@@ -65,6 +65,11 @@ console.log('\nEffect level dials (00 00 04 27-29)');
 // to the LLM, but they are still part of the patch, so presets and backups
 // must keep carrying them.
 for (const n of [1, 2, 3]) is(A.PRESET_IDS.includes('SYS_KNOB_POS_FX' + n), true, `SYS_KNOB_POS_FX${n} is still saved in presets`);
+// Writing a dial points the hardware at one effect of its pair and silences the
+// other, so a whole-patch push must never resend one: a stale value switched
+// blocks off about half a second after every load.
+for (const n of [1, 2, 3]) is(A.SYSTEM_SEND_IDS.includes('SYS_KNOB_POS_FX' + n), false, `a patch push does not resend SYS_KNOB_POS_FX${n}`);
+is(A.SYSTEM_SEND_IDS.includes('SYS_KNOB_POS_GAIN'), true, 'a patch push still resends the amp knobs');
 A.resetBuffers(false);
 const cat = A.llmPrompt('test');
 for (const n of [1, 2, 3]) is(/SYS_KNOB_POS_FX/.test(cat), false, `the LLM catalogue does not offer SYS_KNOB_POS_FX${n}`);
