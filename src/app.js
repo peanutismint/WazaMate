@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.19. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.20. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -935,10 +935,131 @@ function pasteImport() {
   $('#help').showModal();
   area.focus();
 }
+/* ------------------------------------------------------------ library panel: order, favourites, bulk actions */
+/** Favourites float to the top. Array.sort is stable, so within each group the
+ *  library keeps the order the user dragged it into. */
+const libOrder = (l = lib) => [...l].sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0));
+const icon = name => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'uic'); s.setAttribute('aria-hidden', 'true'); s.innerHTML = UI_ICON[name]; return s; };
+let libSel = new Set();
+
+/** Rewrites the library from what is on screen: favourites in their shown order, then the rest. */
+function libCommit() {
+  const ids = [...$('#favlist').children, ...$('#restlist').children].map(r => r.dataset.id);
+  const byId = new Map(lib.map(p => [p.id, p]));
+  lib = ids.map(id => byId.get(id)).filter(Boolean);
+  saveLib(); renderLib();
+}
+/** Drag inside one group. The two groups are separate lists, so a drag can never
+ *  land a favourite among the others, which the display would undo anyway. */
+function libDrag(e, row, list) {
+  if (e.button > 0) return;
+  e.preventDefault();
+  row.classList.add('dragging');
+  // Moving the row in the DOM drops any pointer capture taken on the handle, which
+  // ends the drag after one step, so the whole gesture is followed on the window.
+  const move = ev => {
+    for (const other of list.children) {
+      if (other === row) continue;
+      const r = other.getBoundingClientRect();
+      if (ev.clientY > r.top && ev.clientY < r.bottom) {
+        list.insertBefore(row, ev.clientY < r.top + r.height / 2 ? other : other.nextSibling);
+        break;
+      }
+    }
+  };
+  const done = () => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', done); window.removeEventListener('pointercancel', done);
+    row.classList.remove('dragging'); libCommit();
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', done); window.addEventListener('pointercancel', done);
+}
+/** Arrow keys do the same job as a drag, for anyone not using a pointer. */
+function libNudge(e, row, list) {
+  const d = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0;
+  if (!d) return;
+  e.preventDefault();
+  const sibs = [...list.children], i = sibs.indexOf(row), to = i + d;
+  if (to < 0 || to >= sibs.length) return;
+  list.insertBefore(d < 0 ? row : sibs[to], d < 0 ? sibs[to] : row);
+  libCommit(); e.currentTarget.focus();
+}
+function libRow(p, list) {
+  const row = h('div', { class: 'librow' + (p.id === state.preset ? ' cur' : ''), 'data-id': p.id });
+  const grip = h('button', { class: 'grip', type: 'button', 'aria-label': 'Reorder ' + p.name, title: 'Drag to reorder, or use the arrow keys' }, icon('grip'));
+  grip.addEventListener('pointerdown', e => libDrag(e, row, list));
+  grip.addEventListener('keydown', e => libNudge(e, row, list));
+  const tick = h('input', { type: 'checkbox', 'aria-label': 'Select ' + p.name });
+  tick.checked = libSel.has(p.id);
+  tick.addEventListener('change', () => { tick.checked ? libSel.add(p.id) : libSel.delete(p.id); libFoot(); });
+  const star = h('button', { class: 'star' + (p.fav ? ' on' : ''), type: 'button', 'aria-pressed': !!p.fav, 'aria-label': (p.fav ? 'Remove ' : 'Add ') + p.name + ' from favourites', title: p.fav ? 'A favourite. Click to remove.' : 'Make this a favourite, so it sits at the top' }, icon('star'));
+  star.addEventListener('click', () => { p.fav = !p.fav; saveLib(); renderLib(); libFill(); });
+  const name = h('button', { class: 'libname', type: 'button', title: 'Load this sound' }, p.name);
+  name.addEventListener('click', () => { presetLoad(p.id); libFill(); });
+  const ren = h('button', { class: 'libic', type: 'button', 'aria-label': 'Rename ' + p.name, title: 'Rename' }, icon('edit'));
+  ren.addEventListener('click', () => { const n = cleanName(prompt('New name (up to 16 characters):', p.name)); if (!n) return; p.name = n; if (p.id === state.preset) setNameBytes(n); saveLib(); render(); libFill(); });
+  row.append(grip, tick, star, name, ren);
+  return row;
+}
+function libFoot() {
+  const n = libSel.size, foot = $('#libfoot');
+  foot.textContent = '';
+  const act = (label, ic, fn, danger) => { const b = h('button', { class: 'btn' + (danger ? ' danger' : ''), type: 'button', disabled: n ? null : '' }, icon(ic), label); b.addEventListener('click', fn); return b; };
+  foot.append(h('span', { class: 'libcount' }, n ? n + ' selected' : 'Nothing selected'),
+    act('Duplicate', 'copy', libDupSel), act('Delete', 'trash', libDelSel, true));
+}
+function libDupSel() {
+  const picked = libOrder().filter(p => libSel.has(p.id));
+  for (const p of picked) lib.push({ id: newId(), name: cleanName(p.name.slice(0, 11) + ' copy'), params: { ...p.params }, fav: false });
+  libSel = new Set(); saveLib(); renderLib(); libFill();
+  toast('Duplicated ' + picked.length + ' preset' + (picked.length > 1 ? 's' : '') + '.');
+}
+function libDelSel() {
+  const picked = lib.filter(p => libSel.has(p.id));
+  if (!picked.length) return;
+  if (!confirm('Delete ' + (picked.length === 1 ? '"' + picked[0].name + '"' : picked.length + ' presets') + ' from your library?\n\nThe headphones are not changed, and anything stored in a memory stays there.')) return;
+  lib = lib.filter(p => !libSel.has(p.id));
+  if (libSel.has(state.preset)) state.preset = null;
+  libSel = new Set(); saveLib(); render(); libFill();
+  toast('Deleted ' + picked.length + ' preset' + (picked.length > 1 ? 's' : '') + '.');
+}
+/** Redraws both lists in place, keeping the dialog open. */
+function libFill() {
+  const favs = $('#favlist'), rest = $('#restlist');
+  favs.textContent = ''; rest.textContent = '';
+  const all = libOrder();
+  for (const p of all) { const list = p.fav ? favs : rest; list.append(libRow(p, list)); }
+  $('#favsec').hidden = !all.some(p => p.fav);
+  $('#restsec').hidden = !all.some(p => !p.fav);
+  $('#libempty').hidden = !!all.length;
+  const all2 = $('#liball');
+  all2.checked = all.length > 0 && libSel.size === all.length;
+  all2.indeterminate = libSel.size > 0 && libSel.size < all.length;
+  libFoot();
+}
+function libManage() {
+  libSel = new Set();
+  const box = $('#libbox');
+  box.textContent = '';
+  const all = h('input', { type: 'checkbox', id: 'liball', 'aria-label': 'Select every preset' });
+  all.addEventListener('change', () => { libSel = all.checked ? new Set(lib.map(p => p.id)) : new Set(); libFill(); });
+  box.append(
+    h('h2', {}, 'Your library'),
+    h('p', {}, 'Drag by the handle to reorder. Star a preset to keep it at the top. Tick any number of them to duplicate or delete the lot.'),
+    h('div', { class: 'libhead' }, all, h('label', { for: 'liball' }, 'Select all'), h('span', { style: 'flex:1' }),
+      h('span', { class: 'libcount' }, lib.length + ' preset' + (lib.length === 1 ? '' : 's'))),
+    h('p', { id: 'libempty', class: 'note', hidden: '' }, 'Nothing saved yet. Use "New from current sound" to start one.'),
+    h('div', { id: 'favsec', class: 'libsec', hidden: '' }, h('h3', {}, 'Favourites'), h('div', { id: 'favlist', class: 'liblist' })),
+    h('div', { id: 'restsec', class: 'libsec', hidden: '' }, h('h3', {}, 'Everything else'), h('div', { id: 'restlist', class: 'liblist' })),
+    h('div', { id: 'libfoot', class: 'libfoot' }),
+    h('div', { class: 'prow' }, (() => { const b = h('button', { class: 'btn primary', type: 'button' }, 'Done'); b.addEventListener('click', () => $('#libdlg').close()); return b; })()));
+  libFill();
+  $('#libdlg').showModal();
+}
 function renderLib() {
   const s = $('#preset'); s.textContent = '';
   s.append(h('option', { value: '' }, lib.length ? 'Headphone memory (no preset)' : 'No presets yet'));
-  for (const p of lib) s.append(h('option', { value: p.id }, p.name));
+  // Option text cannot be styled, so a favourite is marked with the star itself.
+  for (const p of libOrder()) s.append(h('option', { value: p.id }, (p.fav ? '\u2605 ' : '') + p.name));
   s.value = curPreset() ? state.preset : '';
   const m = $('#slist'); m.textContent = '';
   m.append(h('div', { class: 'mhead' }, 'Store current sound in memory'));
@@ -1431,6 +1552,8 @@ const UI_ICON = {
   paste: '<rect x="7" y="4" width="11" height="16" rx="2"/><path d="M11 4V3h3v1M4 8v11a2 2 0 0 0 2 2h1"/>',
   fork: '<path d="M3.5 17a8.5 8.5 0 0 1 17 0"/><path d="M12 17l3.5-6.5"/><circle cx="12" cy="17" r="1.2" fill="currentColor"/>',
   spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/>', exp: '<path d="M12 15V3M7 8l5-5 5 5M4 20h16"/>',
+  star: '<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.8z"/>',
+  grip: '<circle cx="9" cy="6" r="1.4" fill="currentColor"/><circle cx="15" cy="6" r="1.4" fill="currentColor"/><circle cx="9" cy="12" r="1.4" fill="currentColor"/><circle cx="15" cy="12" r="1.4" fill="currentColor"/><circle cx="9" cy="18" r="1.4" fill="currentColor"/><circle cx="15" cy="18" r="1.4" fill="currentColor"/>'
 };
 function init() {
   for (const e of document.querySelectorAll('[data-ic]')) e.insertAdjacentHTML('afterbegin', `<svg class="uic" viewBox="0 0 24 24" aria-hidden="true">${UI_ICON[e.dataset.ic]}</svg>`);
@@ -1446,7 +1569,7 @@ function init() {
   $('#connect').addEventListener('click', connect);
   $('#preset').addEventListener('change', e => presetLoad(e.target.value));
   $('#psave').addEventListener('click', presetSave);
-  const acts = { pnew: presetNew, pinit: presetInit, pdup: presetDuplicate, pren: presetRename, pdel: presetDelete, pexp: () => presetExport(false), pexpall: () => presetExport(true), pimp: () => $('#pfile').click(), pbackup: backupMemories, pllm: copyLlmPrompt, ppaste: pasteImport, pgen: llmCreate, pllmset: llmSettings };
+  const acts = { pnew: presetNew, pinit: presetInit, plib: libManage, pdup: presetDuplicate, pren: presetRename, pdel: presetDelete, pexp: () => presetExport(false), pexpall: () => presetExport(true), pimp: () => $('#pfile').click(), pbackup: backupMemories, pllm: copyLlmPrompt, ppaste: pasteImport, pgen: llmCreate, pllmset: llmSettings };
   for (const k in acts) $('#' + k).addEventListener('click', () => { $('#pmenu').open = false; acts[k](); });
   $('#pfile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) presetImport(f); });
   $('#mute').addEventListener('click', toggleMute);

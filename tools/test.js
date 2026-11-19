@@ -18,7 +18,7 @@ const src = p => fs.readFileSync(path.join(root, 'src', p), 'utf8');
 // Load app.js with its data placeholder filled in, then pull out the internals
 // we want to exercise. The file guards its own init() behind a document check.
 let code = src('app.js').replace('/*__DATA__*/null', src('schema.json'));
-code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,coerce,P,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
+code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,coerce,libOrder,P,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
 const mod = { exports: {} };
 new Function('module', 'localStorage', code)(mod, { getItem: () => null });
 const A = mod.exports;
@@ -90,6 +90,14 @@ is(A.coerce('DLY_SW', 1).value, 1, 'a plain number still works');
 is(A.coerce('DLY_SW', '1').value, 1, 'a number written as text still works');
 is(A.coerce('SYS_KNOB_POS_GAIN', 400).value, A.P.SYS_KNOB_POS_GAIN.max, 'a value past the top is pulled into range');
 is(typeof A.coerce('SYS_KNOB_POS_GAIN', 400).note, 'string', 'and says so');
+
+console.log('\nLibrary order');
+// Favourites float to the top, and the sort is stable, so the order the user
+// dragged each group into survives.
+const fav = (n, f) => ({ id: n, name: n, fav: f });
+const shown = A.libOrder([fav('a', false), fav('b', true), fav('c', false), fav('d', true)]).map(p => p.name);
+is(shown.join(' '), 'b d a c', 'favourites come first, each group in its own order');
+is(A.libOrder([fav('a', false), fav('b', false)]).map(p => p.name).join(' '), 'a b', 'with no favourites the order is untouched');
 
 console.log('\nSchema');
 is(A.PARAMS.length > 500, true, `${A.PARAMS.length} parameters loaded`);

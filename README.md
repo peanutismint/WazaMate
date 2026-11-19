@@ -121,7 +121,15 @@ Roland's app, and any other browser tab running WazaMate, before connecting.
 
 ## Your presets live in your browser
 
-This is the one thing worth knowing before you spend an evening building sounds.
+Build up a few sounds and **Manage library** in the preset menu is where you keep
+them in order. Drag by the handle to reorder, star the ones you reach for most so
+they sit at the top of the dropdown, and tick any number of them to duplicate or
+delete the lot in one go.
+
+![The library panel, showing starred favourites at the top, drag handles on every row, and two presets ticked for a bulk action](docs/screenshot-library.png)
+
+The rest of this section is the one thing worth knowing before you spend an
+evening building sounds.
 
 Presets are saved in your browser's local storage for this page. That means:
 
