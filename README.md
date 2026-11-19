@@ -11,8 +11,9 @@ through. No app store, no install, no account.
 ![The WazaMate editor, showing the signal chain across the top and the Brown amp open below it](docs/screenshot.png)
 
 WazaMate is a single HTML file. Everything runs in your browser, on your own
-machine. Nothing is uploaded anywhere, there is no server, and there is nobody
-collecting anything.
+machine. There is no server, nothing is collected, and the only thing that ever
+leaves your browser is a patch request you deliberately send to an LLM, if you
+choose to set one up.
 
 > Not affiliated with, endorsed by, or supported by Roland or BOSS. WAZA-AIR and
 > BOSS are trademarks of their respective owners. This is an independent project
@@ -44,13 +45,19 @@ memories when you are happy with it.
 both delays, but each keeps its own note value, so you can run Delay 1 at a
 dotted 1/8 against Delay 2 at a 1/4 and re-tap without losing the relationship.
 
-**Let an LLM build you a patch.** "Copy prompt for an LLM" in the preset menu
-copies the full parameter list plus the patch you are on. Paste it into any
-chatbot and describe the sound you are after. It comes back with its reasoning,
-which amp, which drive, why that delay time, followed by the patch itself. Paste
-the whole reply into "Paste a patch from an LLM" and it loads straight away, so
-you can hear it and tweak from there. No account, no API key, and WazaMate still
-sends nothing anywhere.
+**Let an LLM build you a patch.** Describe the sound you want, "a chiming
+delay-heavy clean tone like The Edge on Pride", and get a patch back that loads
+straight away so you can hear it. It explains its choices too, which amp, which
+drive, why that delay time, so you can tweak rather than guess.
+
+Two ways to use it, and both are free:
+
+- **Connect an LLM once** under "New patch from an LLM". Paste an API key and
+  from then on it is one dialog and a few seconds. Google Gemini has a free tier
+  and is the one to start with.
+- **Or copy and paste.** "Copy prompt for an LLM" copies everything needed into
+  your clipboard. Paste it into whatever chatbot you already use, then bring the
+  whole reply back with "Paste a patch from an LLM". No key, no setup.
 
 **Follows the headphones.** Change a patch using the button on the headphones
 and the screen follows. Turn your head and the ambience view turns with you.
@@ -129,6 +136,27 @@ memories** in the same menu. It reads all six off the headphones and saves them
 to a file, so a store you regret can be undone. Storing overwrites whatever was
 in that memory, and the factory patches do not come back on their own, short of
 a factory reset on the headphones themselves.
+
+## Connecting an LLM
+
+Under the preset menu, **LLM settings**. Your key is kept in this browser and
+sent straight to the provider you choose. WazaMate has no server, so it never
+sees your key or your request, and neither does anyone else.
+
+| Provider | Works from a web page | Notes |
+| --- | --- | --- |
+| **Google Gemini** | Yes | Free tier, the one to start with |
+| OpenRouter | Yes | One key, many models, some free |
+| Anthropic Claude | Yes | Paid |
+| Groq | Unconfirmed | Generous free tier, but may come back blocked |
+| Anything OpenAI-compatible | Depends | A local model, or a proxy of your own |
+| **OpenAI / ChatGPT** | **No** | Refuses browser calls outright, no key can fix it |
+
+Model names change faster than this README. If a provider says there is no such
+model, put the current name in the Model box.
+
+If you would rather not hand over a key at all, the copy and paste route does
+exactly the same job with your existing chatbot.
 
 ## Advanced
 

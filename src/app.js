@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.12. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.13. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -446,7 +446,7 @@ async function backupMemories() {
   }
 }
 /** A prompt an LLM can answer with a preset file, built from the live parameter map. */
-function llmPrompt() {
+function llmPrompt(wanted) {
   const skip = /^(KNOBPOS|SYS_LED|SYS_FXSEL|FXBOX_SEL|PEDAL_FX|EV1WL)|_HARM_\d/;
   // FX2 and Delay 2 repeat the same parameters under another prefix, so describe them once.
   const mirrored = /^(FX:|DELAY2)/;
@@ -474,7 +474,7 @@ function llmPrompt() {
   return [
     'You are setting up a guitar patch on a BOSS WAZA-AIR, a modelling headphone amp.',
     '',
-    'THE SOUND I WANT: <describe it here, for example "a chiming delay-heavy clean tone like The Edge on U2\'s Pride">',
+    'THE SOUND I WANT: ' + (wanted || '<describe it here, for example "a chiming delay-heavy clean tone like The Edge on U2\'s Pride">'),
     '',
     'Reply in two parts.',
     '',
@@ -502,6 +502,92 @@ function llmPrompt() {
     JSON.stringify({ name: cleanName(patchName()) || 'Current', params: snapshot() }),
   ].join('\n');
 }
+/**
+ * Providers that allow calls straight from a web page. OpenAI is missing on purpose: it refuses
+ * browser origins outright, so no key can make it work from a static site.
+ * The key is kept in this browser and goes only to the provider the user picked. It is never
+ * logged, never exported and never sent anywhere else.
+ */
+const LLM_PROVIDERS = {
+  gemini: {
+    name: 'Google Gemini', model: 'gemini-2.0-flash', keys: 'https://aistudio.google.com/apikey',
+    note: 'Free tier, and confirmed to work from a web page. The best place to start.',
+    async send(cfg, prompt, signal) {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model)}:generateContent`, {
+        method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.key },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.8 } }),
+      });
+      const d = await readJson(r);
+      return d.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
+    },
+  },
+  groq: {
+    name: 'Groq', model: 'llama-3.3-70b-versatile', openai: 'https://api.groq.com/openai/v1', keys: 'https://console.groq.com/keys',
+    note: 'Generous free tier. Whether it accepts calls from a web page is unconfirmed, so this one may come back blocked.',
+  },
+  openrouter: {
+    name: 'OpenRouter', model: 'google/gemini-2.0-flash-exp:free', openai: 'https://openrouter.ai/api/v1', keys: 'https://openrouter.ai/keys',
+    note: 'One key reaches many models, including free ones.',
+  },
+  anthropic: {
+    name: 'Anthropic Claude', model: 'claude-sonnet-4-5', keys: 'https://console.anthropic.com/settings/keys',
+    note: 'Paid. Needs a browser-access header, which WazaMate sends for you.',
+    async send(cfg, prompt, signal) {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', signal,
+        headers: { 'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: cfg.model, max_tokens: 4000, messages: [{ role: 'user', content: prompt }] }),
+      });
+      const d = await readJson(r);
+      return (d.content || []).map(c => c.text || '').join('');
+    },
+  },
+  custom: {
+    name: 'Anything OpenAI-compatible', model: '', openai: '', keys: '',
+    note: 'A local model, a proxy of your own, or any other endpoint that speaks the OpenAI chat format.',
+  },
+};
+/** Shared by every OpenAI-compatible provider. */
+async function sendOpenAiStyle(cfg, prompt, signal) {
+  const base = (cfg.baseUrl || LLM_PROVIDERS[cfg.provider].openai || '').replace(/\/+$/, '');
+  if (!base) throw new Error('No endpoint address is set for this provider.');
+  const r = await fetch(base + '/chat/completions', {
+    method: 'POST', signal, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + cfg.key },
+    body: JSON.stringify({ model: cfg.model, temperature: 0.8, messages: [{ role: 'user', content: prompt }] }),
+  });
+  const d = await readJson(r);
+  return d.choices?.[0]?.message?.content || '';
+}
+async function readJson(r) {
+  const text = await r.text();
+  let d = null;
+  try { d = JSON.parse(text); } catch (e) { }
+  if (!r.ok) {
+    const msg = d?.error?.message || d?.message || text.slice(0, 200) || ('HTTP ' + r.status);
+    if (r.status === 401 || r.status === 403) throw new Error('The provider rejected the key: ' + msg);
+    if (r.status === 404) throw new Error('No such model. Check the model name in Settings: ' + msg);
+    if (r.status === 429) throw new Error('Rate limit or quota reached. Wait a moment, or try a different provider: ' + msg);
+    throw new Error(msg);
+  }
+  if (!d) throw new Error('The provider sent something that was not JSON.');
+  return d;
+}
+const llmCfg = () => { try { return JSON.parse(localStorage.getItem('wazamate.llm') || 'null'); } catch (e) { return null; } };
+const saveLlmCfg = c => { try { localStorage.setItem('wazamate.llm', JSON.stringify(c)); } catch (e) { toast('This browser would not save the settings.'); } };
+async function askLlm(cfg, prompt, signal) {
+  const p = LLM_PROVIDERS[cfg.provider];
+  try {
+    const text = await (p.send ? p.send(cfg, prompt, signal) : sendOpenAiStyle(cfg, prompt, signal));
+    if (!text.trim()) throw new Error('The provider replied with nothing.');
+    return text;
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    // A blocked cross-origin request surfaces as a bare TypeError with nothing useful in it.
+    if (e instanceof TypeError) throw new Error('The browser blocked the request before it reached ' + p.name + '. This provider probably does not allow calls from a web page. Gemini is the safe choice.');
+    throw e;
+  }
+}
+
 async function copyLlmPrompt() {
   const text = llmPrompt();
   try { await navigator.clipboard.writeText(text); toast('Prompt copied (' + Math.round(text.length / 1024) + ' KB). Paste it into any LLM, describe the sound you want, then bring its whole reply back with "Paste a patch from an LLM".'); }
@@ -563,6 +649,109 @@ function importData(d) {
     toast('Imported ' + n + ' preset' + (n > 1 ? 's' : '') + '. "' + last.name + '" is loaded now.');
   } catch (e) { toast('Could not import: ' + (e.message || e)); }
 }
+function llmSettings(then) {
+  const cfg = llmCfg() || { provider: 'gemini', key: '', model: LLM_PROVIDERS.gemini.model, baseUrl: '' };
+  const box = $('#llmbox');
+  box.textContent = '';
+  const sel = h('select', { 'aria-label': 'Provider' });
+  for (const id in LLM_PROVIDERS) sel.append(h('option', { value: id, selected: id === cfg.provider ? '' : null }, LLM_PROVIDERS[id].name));
+  const key = h('input', { type: 'password', value: cfg.key || '', placeholder: 'Paste your API key', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'API key' });
+  const model = h('input', { type: 'text', value: cfg.model || '', placeholder: 'Model name', spellcheck: 'false', 'aria-label': 'Model' });
+  const base = h('input', { type: 'text', value: cfg.baseUrl || '', placeholder: 'https://example.com/v1', spellcheck: 'false', 'aria-label': 'Endpoint address' });
+  const note = h('p', { class: 'note' }), keyLink = h('p', {}), baseRow = h('label', { class: 'lrow' }, h('span', {}, 'Endpoint'), base);
+  const refresh = () => {
+    const p = LLM_PROVIDERS[sel.value];
+    note.textContent = p.note;
+    keyLink.textContent = '';
+    if (p.keys) keyLink.append('Get a key: ', h('a', { href: p.keys, target: '_blank', rel: 'noopener' }, p.keys));
+    baseRow.hidden = sel.value !== 'custom';
+    if (!model.value || model.value === LLM_PROVIDERS[cfg.provider]?.model) model.value = p.model;
+  };
+  sel.addEventListener('change', refresh);
+  box.append(h('h2', {}, 'Where should patches come from?'),
+    h('p', {}, 'WazaMate has no server, so your key is kept in this browser and sent straight to the provider you pick. It is never logged, never exported, and never reaches anyone else.'),
+    h('label', { class: 'lrow' }, h('span', {}, 'Provider'), sel), note,
+    h('label', { class: 'lrow' }, h('span', {}, 'API key'), key), keyLink,
+    h('label', { class: 'lrow' }, h('span', {}, 'Model'), model),
+    h('p', { class: 'note' }, 'Model names change. If the provider says there is no such model, check its documentation and put the current name here.'),
+    baseRow,
+    h('div', { class: 'prow' },
+      h('button', { class: 'btn', type: 'button', onclick: () => { $('#llm').close(); } }, 'Cancel'),
+      h('button', { class: 'btn', type: 'button', onclick: () => { localStorage.removeItem('wazamate.llm'); $('#llm').close(); toast('Key removed from this browser.'); } }, 'Forget my key'),
+      h('button', {
+        class: 'btn primary', type: 'button', onclick: () => {
+          if (!key.value.trim() && sel.value !== 'custom') return toast('Paste an API key first.');
+          saveLlmCfg({ provider: sel.value, key: key.value.trim(), model: model.value.trim() || LLM_PROVIDERS[sel.value].model, baseUrl: base.value.trim() });
+          $('#llm').close();
+          if (then) then();
+        },
+      }, 'Save')));
+  refresh();
+  $('#llm').showModal();
+  key.focus();
+}
+
+function llmCreate() {
+  const cfg = llmCfg();
+  if (!cfg || (!cfg.key && cfg.provider !== 'custom')) return llmSettings(llmCreate);
+  const box = $('#llmbox');
+  box.textContent = '';
+  const want = h('textarea', { class: 'pastebox', rows: '3', 'aria-label': 'The sound you want',
+    placeholder: 'A chiming delay-heavy clean tone like The Edge on U2’s Pride' });
+  const status = h('p', { class: 'note' }), reason = h('div', { class: 'reason' });
+  const buttons = h('div', { class: 'prow' });
+  let ctrl = null, started = 0, timer = null;
+  const setStage = t => { status.textContent = t + ' (' + Math.round((Date.now() - started) / 1000) + 's)'; };
+  const stop = () => { clearInterval(timer); timer = null; if (ctrl) { ctrl.abort(); ctrl = null; } };
+  const buttonRow = (...kids) => { buttons.textContent = ''; buttons.append(...kids); };
+  const close = () => { stop(); $('#llm').close(); };
+
+  async function go() {
+    const wanted = want.value.trim();
+    if (!wanted) return toast('Describe the sound you want first.');
+    ctrl = new AbortController();
+    started = Date.now();
+    want.disabled = true;
+    reason.textContent = '';
+    setStage('Asking ' + LLM_PROVIDERS[cfg.provider].name);
+    timer = setInterval(() => setStage('Asking ' + LLM_PROVIDERS[cfg.provider].name), 1000);
+    buttonRow(h('button', { class: 'btn', type: 'button', onclick: close }, 'Cancel'));
+    try {
+      const text = await askLlm(cfg, llmPrompt(wanted), ctrl.signal);
+      clearInterval(timer); timer = null; ctrl = null;
+      status.textContent = 'Reading the reply';
+      const data = extractJson(text);
+      if (!data) throw new Error('The reply had no patch in it. Try asking again, or pick a stronger model.');
+      // Everything the model wrote except the JSON block is its reasoning, which is the useful part.
+      reason.textContent = text.replace(/```[\s\S]*?```/g, '').replace(/\{"format"[\s\S]*\}/, '')
+        .replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#{1,6}\s*/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+      const before = lib.length;
+      importData(data);
+      if (lib.length === before) throw new Error('That patch could not be loaded. See the message above.');
+      status.textContent = 'Loaded and playing. Keep it, or ask for something else.';
+      want.disabled = false;
+      buttonRow(h('button', { class: 'btn', type: 'button', onclick: go }, 'Ask again'),
+        h('button', { class: 'btn primary', type: 'button', onclick: close }, 'Done'));
+    } catch (e) {
+      clearInterval(timer); timer = null; ctrl = null;
+      want.disabled = false;
+      status.textContent = e.name === 'AbortError' ? 'Cancelled.' : e.message;
+      buttonRow(h('button', { class: 'btn', type: 'button', onclick: () => llmSettings(llmCreate) }, 'Settings'),
+        h('button', { class: 'btn', type: 'button', onclick: close }, 'Close'),
+        h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Try again'));
+    }
+  }
+  box.append(h('h2', {}, 'New patch from an LLM'),
+    h('p', {}, 'Describe the sound you are after. A song, a player, an era, or just the feel of it.'),
+    want, status, reason, buttons);
+  buttonRow(h('button', { class: 'btn', type: 'button', onclick: () => llmSettings(llmCreate) }, 'Settings'),
+    h('button', { class: 'btn', type: 'button', onclick: close }, 'Cancel'),
+    h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Create patch'));
+  $('#llm').addEventListener('close', stop, { once: true });
+  $('#llm').showModal();
+  want.focus();
+}
+
 function pasteImport() {
   const box = $('#helpbox');
   box.textContent = '';
@@ -1019,7 +1208,7 @@ function init() {
   $('#connect').addEventListener('click', connect);
   $('#preset').addEventListener('change', e => presetLoad(e.target.value));
   $('#psave').addEventListener('click', presetSave);
-  const acts = { pnew: presetNew, pinit: presetInit, pdup: presetDuplicate, pren: presetRename, pdel: presetDelete, pexp: () => presetExport(false), pexpall: () => presetExport(true), pimp: () => $('#pfile').click(), pbackup: backupMemories, pllm: copyLlmPrompt, ppaste: pasteImport };
+  const acts = { pnew: presetNew, pinit: presetInit, pdup: presetDuplicate, pren: presetRename, pdel: presetDelete, pexp: () => presetExport(false), pexpall: () => presetExport(true), pimp: () => $('#pfile').click(), pbackup: backupMemories, pllm: copyLlmPrompt, ppaste: pasteImport, pgen: llmCreate, pllmset: llmSettings };
   for (const k in acts) $('#' + k).addEventListener('click', () => { $('#pmenu').open = false; acts[k](); });
   $('#pfile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) presetImport(f); });
   $('#mute').addEventListener('click', toggleMute);
