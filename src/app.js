@@ -446,6 +446,13 @@ async function backupMemories() {
   }
 }
 /** A prompt an LLM can answer with a preset file, built from the live parameter map. */
+/** Only what differs from Roland's defaults, so a follow-up can carry the patch without the bulk. */
+function changedParams() {
+  const out = {};
+  for (const id of PRESET_IDS) { const v = get(id); if (v !== Number(P[id].init)) out[id] = v; }
+  return out;
+}
+
 function llmPrompt(wanted) {
   const skip = /^(KNOBPOS|SYS_LED|SYS_FXSEL|FXBOX_SEL|PEDAL_FX|EV1WL)|_HARM_\d/;
   // FX2 and Delay 2 repeat the same parameters under another prefix, so describe them once.
@@ -492,14 +499,15 @@ function llmPrompt(wanted) {
     '- SYS_KNOB_POS_FX1 and FX2 are shared level dials: 0 and 52 are off, 1-51 sets the first effect of the pair (stomp, delay 1) at level 0-50, 53-103 sets the second (mod 1, mod 2). SYS_KNOB_POS_FX3 is 0 for off, else 1-101 for reverb and delay 2 level 0-100. An effect switched on whose dial is off will not be heard, so set these.',
     '- Mod 2 repeats Mod 1: every FX1_ parameter below also exists as FX2_ with the same range, and its switch and type are FX2_SW and FX2_FXTYPE.',
     '- Delay 2 repeats Delay 1: every DLY_ parameter below also exists as DLY2_, and its switch and type are DLY2_SW and DLY2_TYPE.',
-    '- You may leave out any parameter you do not care about.',
+    '- Anything you leave out keeps the value it already has, so to switch an effect off, say so with its SW parameter rather than omitting it.',
     '- Put nothing but the JSON inside the code block.',
     '',
     'PARAMETERS (id, then either a range or the meaning of each value)',
     lines.join('\n'),
     '',
-    'THE PATCH I HAVE NOW, as a starting point:',
-    JSON.stringify({ name: cleanName(patchName()) || 'Current', params: snapshot() }),
+    'THE PATCH I HAVE NOW, as a starting point. Only the parameters that differ from the defaults are',
+    'listed, so everything not mentioned here is at its default value:',
+    JSON.stringify({ name: cleanName(patchName()) || 'Current', params: changedParams() }),
   ].join('\n');
 }
 /**
@@ -590,13 +598,6 @@ async function askLlm(cfg, turns, signal) {
     if (e instanceof TypeError) throw new Error('The browser blocked the request before it reached ' + p.name + '. This provider probably does not allow calls from a web page. Gemini is the safe choice.');
     throw e;
   }
-}
-
-/** Only what differs from Roland's defaults, so a follow-up can carry the patch without the bulk. */
-function changedParams() {
-  const out = {};
-  for (const id of PRESET_IDS) { const v = get(id); if (v !== Number(P[id].init)) out[id] = v; }
-  return out;
 }
 
 async function copyLlmPrompt() {
