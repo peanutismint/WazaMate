@@ -2,6 +2,8 @@
 
 A web editor for the BOSS WAZA-AIR wireless guitar headphones.
 
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=000&style=flat)](https://buymeacoffee.com/peanutismint)
+
 ### [Open WazaMate](https://peanutismint.github.io/WazaMate/)
 
 Open one page in your browser, connect over Bluetooth, and get at every amp,
@@ -218,12 +220,9 @@ format, the handshake and what has been confirmed on real hardware.
 ## Support
 
 If WazaMate is useful to you and you would like to chip in towards the domain
-and keep it free for everyone, there will be a link here. Entirely optional, and
+and keep it free for everyone, you can
+[buy me a coffee](https://buymeacoffee.com/peanutismint). Entirely optional, and
 the app will never ask you for anything.
-
-<!-- Add the link when you have one, for example:
-[Buy me a coffee](https://buymeacoffee.com/yourname)
--->
 
 ## Licence
 
