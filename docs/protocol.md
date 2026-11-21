@@ -188,13 +188,36 @@ address range and are still sent.
 
 ### Chain order
 
-`CHAIN_PTN` at `60 00 12 00` picks where the amp sits:
+`CHAIN_PTN` at `60 00 12 00` picks where the amp sits. These match the three
+patterns Roland documents for BOSS Tone Studio, which name the pairs as single
+blocks, BOOSTER/MOD and DELAY/FX:
 
 | Value | Order |
 | --- | --- |
-| 0 | In, amp and EQ, stomp and mod, delay and mod 2, reverb, out |
-| 1 | In, stomp and mod, amp and EQ, delay and mod 2, reverb, out |
-| 2 | In, stomp and mod, delay and mod 2, amp and EQ, reverb, out |
+| 0 | In, amp and EQ, stomp and mod 1, delay 1 and mod 2, delay 2 and reverb, out |
+| 1 | In, stomp and mod 1, amp and EQ, delay 1 and mod 2, delay 2 and reverb, out |
+| 2 | In, stomp and mod 1, delay 1 and mod 2, amp and EQ, delay 2 and reverb, out |
+
+**Reverb is always last**, after the amp and every other effect, and Roland
+states its placement cannot be changed. Nothing reorders the two halves of a
+pair either, so the amp's position is the only ordering choice there is.
+
+WazaMate drew reverb before delay 2 until v0.24. That was wrong on both counts:
+reverb is pinned to the end, and the third knob's own mode is labelled DELAY,
+DLY+REB, REVERB, so when both are on the delay feeds the reverb.
+
+### The third knob's mode and the colour layers
+
+`FXBOX_FX3_LAYER_G`, `_R` and `_Y` carry Roland's own labels DELAY, DLY+REB and
+REVERB, the typo included. That is the mode of the third effect knob: whether it
+works the delay 2 block, the reverb block, or both at once, one setting per
+colour layer.
+
+`FXBOX_SEL_FX1A`, `FX1B`, `FX2A`, `FX2B` and `FX3` are 0 to 2: which colour
+layer is live. Roland's Katana documents call the colours green, red and yellow;
+the WAZA-AIR manual calls the third orange.
+
+Neither is written by a patch push, for the reason in the FXBOX section above.
 
 `POSITION_EQ` at `60 00 12 18` puts the patch EQ before or after the amp.
 

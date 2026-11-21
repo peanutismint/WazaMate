@@ -130,6 +130,19 @@ is(filled.DLY2_SW, 0, 'a slot it did not mention comes back off');
 is(filled.SYS_KNOB_POS_GAIN, 50, 'and an unmentioned knob sits at its default');
 is('NS1_SW' in filled, false, 'the noise gate is not touched at all');
 
+console.log('\nWhat the LLM is told');
+const told = A.llmPrompt('a tone');
+// Nine FXBOX assignment parameters each repeated the whole 37-name type list, a
+// quarter of the prompt, and setting one is exactly what must never happen.
+is(/FXBOX/.test(told), false, 'the FXBOX assignments are not offered');
+// Picking the right effect needs more than its name. Asked for a polyphonic
+// octave, a model reached for OCTAVE, which is one fixed voice below and
+// single-note, instead of PITCH SHIFTER, which does two voices over two octaves.
+is(told.includes('- PITCH SHIFTER:'), true, 'each modulation type says what it is for');
+is(/OCTAVE:.*PITCH SHIFTER/.test(told), true, 'and OCTAVE points at PITCH SHIFTER for anything more');
+is(told.includes('FX1_PITCHSHIFT_PITCH1 -24-24'), true, 'the parameters behind that claim are still listed');
+is(told.length < 15000, true, `the prompt stays under 15 KB (${(told.length / 1024).toFixed(1)})`);
+
 console.log('\nSchema');
 is(A.PARAMS.length > 500, true, `${A.PARAMS.length} parameters loaded`);
 is(A.PATCH_SIZE, 2335, 'patch size matches Roland\'s map');

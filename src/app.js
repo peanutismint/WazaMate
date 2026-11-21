@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.23. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.24. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -492,7 +492,7 @@ function changedParams() {
 }
 
 function llmPrompt(wanted) {
-  const skip = /^(KNOBPOS|SYS_LED|SYS_FXSEL|FXBOX_SEL|PEDAL_FX|EV1WL)|_HARM_\d/;
+  const skip = /^(KNOBPOS|SYS_LED|SYS_FXSEL|FXBOX_|PEDAL_FX|EV1WL)|_HARM_\d/;
   // FX2 and Delay 2 repeat the same parameters under another prefix, so describe them once.
   const mirrored = /^(FX:|DELAY2)/;
   const lines = [], byGroup = new Map();
@@ -545,6 +545,39 @@ function llmPrompt(wanted) {
     '- The patch starts from scratch: every effect is off and every control is at its default until you say otherwise. So list everything your sound needs, and simply leave out any effect you do not want rather than switching it off.',
     '- The noise gate, the ambience or 3D setting and the chain order are left as the player has them, so do not set those.',
     '- Put nothing but the JSON inside the code block.',
+    "",
+    "What each modulation and FX type is for. Any of these can go in Mod 1 or Mod 2:",
+    "- T.WAH: wah that opens with how hard you pick",
+    "- AUTO WAH: wah swept by an LFO, or by picking",
+    "- PEDAL WAH: wah parked at a fixed pedal position",
+    "- COMP: compressor: evens out picking and adds sustain",
+    "- LIMITER: holds peaks down without the squash of a compressor",
+    "- GRAPHIC EQ: fixed-band EQ for carving tone",
+    "- PARAMETRIC EQ: sweepable EQ, for one problem frequency",
+    "- GUITAR SIM: makes one guitar type sound like another, single coil to humbucker, either to acoustic",
+    "- SLOW GEAR: swells each note in, no pick attack, the violin or cello effect",
+    "- WAVE SYNTH: replaces the guitar with a saw or square oscillator and a filter, one note at a time",
+    "- OCTAVE: one voice below, nothing to choose but its range, and it tracks single notes only. For anything other than a plain sub-octave use PITCH SHIFTER",
+    "- PITCH SHIFTER: up to two voices at any interval within two octaves either way, plus fine tune and feedback. Only its MONO mode is single-note, so the others handle chords. This is the one for POG-style octave stacks, shimmer, detuned doubling and fixed harmonies",
+    "- HARMONIST: up to two harmony voices named by scale degree, which follow the key set in MASTER_KEY. For harmony lines in a key, not for octave stacks: PITCH SHIFTER is better for those",
+    "- AC.PROCESSOR: EQ voicing made for acoustic instruments",
+    "- PHASER: sweeping comb filter, the swoosh",
+    "- PHASER 90E: the script-logo orange phaser, one knob, very recognisable",
+    "- FLANGER: jet-plane sweep, deeper and more metallic than a phaser",
+    "- FLANGER 117E: the rack flanger, cleaner and more extreme",
+    "- TREMOLO: volume pulsing in time",
+    "- ROTARY: rotating speaker cabinet, pitch and volume swirl together",
+    "- UNI-V: the vibe sound, a lopsided phaser",
+    "- SLICER: chops the signal into rhythmic patterns, stuttering and gated",
+    "- VIBRATO: pitch wobble with no dry signal mixed in",
+    "- RING MOD: clangy and inharmonic, metallic. Its INTELLIGENT mode follows the note so it stays musical",
+    "- HUMANIZER: vowel filter, makes the guitar talk, two vowels swept between",
+    "- CHORUS: thickens and widens, the classic shimmering double",
+    "- AC.GUITAR SIM: turns an electric into a passable acoustic",
+    "",
+    "A few of the stomp types worth knowing: OCT FUZZ adds an octave above the fuzz, and T-SCREAM, RAT, DST+, GUV DS, METAL ZONE, '60s FUZZ and MUFF FUZZ are models of well known pedals, so pick by the record you are chasing.",
+    "",
+    "Before you settle on a type, read that type's own parameters further down. They tell you what it can actually do, which is often more than the name suggests.",
     '',
     'PARAMETERS (id, then either a range or the meaning of each value)',
     lines.join('\n'),
@@ -1285,7 +1318,7 @@ function tile(b) {
 const wire = () => h('div', { class: 'wire' });
 function renderChain() {
   const path = $('#path'); path.textContent = '';
-  const G = { A: () => { const p = h('div', { class: 'pair' }); const order = get('POSITION_EQ') === 0 ? ['eq', 'amp'] : ['amp', 'eq']; p.append(tile(order[0]), wire(), tile(order[1])); return p; }, B: () => pair('booster', 'mod'), D: () => pair('delay', 'fx'), R: () => pair('reverb', 'delay2') };
+  const G = { A: () => { const p = h('div', { class: 'pair' }); const order = get('POSITION_EQ') === 0 ? ['eq', 'amp'] : ['amp', 'eq']; p.append(tile(order[0]), wire(), tile(order[1])); return p; }, B: () => pair('booster', 'mod'), D: () => pair('delay', 'fx'), R: () => pair('delay2', 'reverb') }; // reverb is always last: Roland's chain patterns put it after the amp and every other effect, and DLY+REV feeds the delay into it
   const pair = (x, y) => { const p = h('div', { class: 'pair' }); p.append(tile(x), wire(), tile(y)); return p; };
   const order = [['A', 'B', 'D', 'R'], ['B', 'A', 'D', 'R'], ['B', 'D', 'A', 'R']][get('CHAIN_PTN')] || ['B', 'A', 'D', 'R'];
   const node = (ic, t) => { const n = h('div', { class: 'node', title: t }); n.innerHTML = ic; return n; };
