@@ -177,6 +177,16 @@ page. Every request, reply and failure is written there alongside the MIDI, with
 timings and sizes, and never your key. A request that gets no reply within
 ninety seconds is dropped rather than left hanging.
 
+Each patch it builds starts from scratch. The six effect slots, the amp and the
+patch EQ go back to their defaults and only what the model asked for is switched
+on, so a delay left running by the last sound does not follow the next one
+around. Your noise gate, ambience and chain order are left as you have them, and
+so is the volume, since a new patch should not change how loud the headphones
+are.
+
+Nothing it builds goes into your library until you press the save button, so you
+can work through ten ideas and keep the one you like.
+
 If you would rather not hand over a key at all, the copy and paste route does
 exactly the same job with your existing chatbot.
 

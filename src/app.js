@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.22. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.23. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -403,6 +403,21 @@ function sendWholePatch(what) { // pushes the whole edit buffer to the headphone
   }
   link.chain.then(() => toast(link.connected ? what + ' sent to the headphones. Use "Store in memory" to keep it there.' : what + ' loaded (preview).'));
 }
+/** What a freshly described patch starts from. The six effect slots, the amp and the
+ *  patch EQ go back to their defaults, so a delay left on by the last patch does not
+ *  follow the next one around. The noise gate, ambience, chain order and everything
+ *  global are left alone: those are how the person has set up their rig, not part of
+ *  the sound being described. The output volume is left alone too, since resetting it
+ *  would change how loud the headphones are without being asked. */
+const RESET_GROUPS = /^(BOOSTER|MOD|MOD_COMMON|FX|FX_COMMON|DELAY|DELAY_COMMON|DELAY2|DELAY2_COMMON|REVERB|EQ|AMP_KNOBS)$/;
+const RESET_IDS = PRESET_IDS.filter(id => RESET_GROUPS.test(String(P[id].group).split(':')[0]) && id !== 'SYS_KNOB_POS_VOLUME');
+/** Fills a partly described patch out to a whole one, so the same JSON always sounds
+ *  the same whatever was playing before it. */
+function completePatch(params) {
+  const full = {};
+  for (const id of RESET_IDS) full[id] = Number(P[id].init);
+  return Object.assign(full, params);
+}
 function applyParams(params) {
   for (const pid of PRESET_IDS) { const d = P[pid], v = params[pid]; if (typeof v === 'number' && isFinite(v)) putRaw(d, clamp(Math.round(v), d.min, d.max) + d.ofs); }
 }
@@ -527,7 +542,8 @@ function llmPrompt(wanted) {
     '- Set how much of each effect is heard with that effect\'s own level parameter, such as ODDS_EFFECT_LEVEL or the chosen type\'s LEVEL.',
     '- Mod 2 repeats Mod 1: every FX1_ parameter below also exists as FX2_ with the same range, and its switch and type are FX2_SW and FX2_FXTYPE.',
     '- Delay 2 repeats Delay 1: every DLY_ parameter below also exists as DLY2_, and its switch and type are DLY2_SW and DLY2_TYPE.',
-    '- Anything you leave out keeps the value it already has, so to switch an effect off, say so with its SW parameter rather than omitting it.',
+    '- The patch starts from scratch: every effect is off and every control is at its default until you say otherwise. So list everything your sound needs, and simply leave out any effect you do not want rather than switching it off.',
+    '- The noise gate, the ambience or 3D setting and the chain order are left as the player has them, so do not set those.',
     '- Put nothing but the JSON inside the code block.',
     '',
     'PARAMETERS (id, then either a range or the meaning of each value)',
@@ -759,7 +775,7 @@ function tryPatch(d) {
     if (d.format !== 'wazamate-presets' || !Array.isArray(d.presets)) throw new Error('not a WazaMate patch');
     const r = readPreset(d.presets[0]);
     if (!r) throw new Error('nothing usable in that patch');
-    applyParams(r.params); setNameBytes(r.name);
+    applyParams(completePatch(r.params)); setNameBytes(r.name);
     state.preset = null;
     sendWholePatch('"' + r.name + '"');
     render();
@@ -778,7 +794,7 @@ function importData(d) {
     for (const src of d.presets.slice(0, 500)) {
       const r = readPreset(src);
       if (!r) continue;
-      last = { id: newId(), name: r.name, params: r.params }; lib.push(last); n++;
+      last = { id: newId(), name: r.name, params: completePatch(r.params) }; lib.push(last); n++;
       report = r;
     }
     if (!n) throw new Error('no usable presets in the file');

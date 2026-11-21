@@ -18,7 +18,7 @@ const src = p => fs.readFileSync(path.join(root, 'src', p), 'utf8');
 // Load app.js with its data placeholder filled in, then pull out the internals
 // we want to exercise. The file guards its own init() behind a document check.
 let code = src('app.js').replace('/*__DATA__*/null', src('schema.json'));
-code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,coerce,libOrder,NO_SEND,lin,P,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
+code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,coerce,libOrder,RESET_IDS,completePatch,NO_SEND,lin,P,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
 const mod = { exports: {} };
 new Function('module', 'localStorage', code)(mod, { getItem: () => null });
 const A = mod.exports;
@@ -113,6 +113,22 @@ for (const id of ['FXBOX_ASGN_FX1B_G', 'FXBOX_ASGN_FX2A_G', 'FXBOX_ASGN_FX3A_G',
 for (const id of ['CHAIN_PTN', 'POSITION_EQ', 'POSITION_SEND_RETURN', 'FX1_FXTYPE', 'REVERB_TYPE', 'DLY_TYPE']) {
   is(skipped(id), false, `a push still writes ${id}`);
 }
+
+console.log('\nA described patch starts from scratch');
+// An LLM names only what it wants, so everything it does not name goes back to its
+// default. Otherwise a delay switched on for one sound follows the next one around.
+for (const id of ['ODDS_SW', 'FX1_SW', 'FX2_SW', 'DLY_SW', 'DLY2_SW', 'REVERB_SW', 'EQ_SW', 'SYS_KNOB_POS_GAIN']) {
+  is(A.RESET_IDS.includes(id), true, `${id} goes back to its default`);
+}
+// The rig, as against the sound: left as the player set it.
+for (const id of ['NS1_SW', 'SEND_RETURN_SW', 'CHAIN_PTN', 'SYS_KNOB_POS_VOLUME', 'SYS_LINE_OUT_MODE']) {
+  is(A.RESET_IDS.includes(id), false, `${id} is left alone`);
+}
+const filled = A.completePatch({ ODDS_SW: 1, REVERB_SW: 1 });
+is(filled.ODDS_SW, 1, 'what the patch asked for wins');
+is(filled.DLY2_SW, 0, 'a slot it did not mention comes back off');
+is(filled.SYS_KNOB_POS_GAIN, 50, 'and an unmentioned knob sits at its default');
+is('NS1_SW' in filled, false, 'the noise gate is not touched at all');
 
 console.log('\nSchema');
 is(A.PARAMS.length > 500, true, `${A.PARAMS.length} parameters loaded`);
