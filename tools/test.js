@@ -61,15 +61,16 @@ is(A.wrapBle(long).every(p => p.length <= 20), true, 'no packet exceeds the 20 b
 is(A.wrapBle(long).length > 1, true, 'a long message is split across packets');
 
 console.log('\nEffect level dials (00 00 04 27-29)');
-// The Katana-style shared dials have no control in the UI and are not offered
-// to the LLM, but they are still part of the patch, so presets and backups
-// must keep carrying them.
-for (const n of [1, 2, 3]) is(A.PRESET_IDS.includes('SYS_KNOB_POS_FX' + n), true, `SYS_KNOB_POS_FX${n} is still saved in presets`);
-// Writing a dial points the hardware at one effect of its pair and silences the
-// other, so a whole-patch push must never resend one: a stale value switched
-// blocks off about half a second after every load.
-for (const n of [1, 2, 3]) is(A.SYSTEM_SEND_IDS.includes('SYS_KNOB_POS_FX' + n), false, `a patch push does not resend SYS_KNOB_POS_FX${n}`);
-is(A.SYSTEM_SEND_IDS.includes('SYS_KNOB_POS_GAIN'), true, 'a patch push still resends the amp knobs');
+// These mirror a Katana panel knob the WAZA-AIR does not have. Writing one makes
+// the hardware pick a single effect of a pair and mute the other; untouched, all
+// six slots are independent. So WazaMate stores none of them, sends none of them
+// and offers none of them to an LLM.
+for (const n of [1, 2, 3]) {
+  is(A.PRESET_IDS.includes('SYS_KNOB_POS_FX' + n), false, `SYS_KNOB_POS_FX${n} is not stored in a preset`);
+  is(A.SYSTEM_SEND_IDS.includes('SYS_KNOB_POS_FX' + n), false, `a patch push does not send SYS_KNOB_POS_FX${n}`);
+}
+is(A.SYSTEM_SEND_IDS.includes('SYS_KNOB_POS_GAIN'), true, 'a patch push still sends the amp knobs');
+is(A.PRESET_IDS.includes('SYS_KNOB_POS_GAIN'), true, 'and a preset still stores them');
 A.resetBuffers(false);
 const cat = A.llmPrompt('test');
 for (const n of [1, 2, 3]) is(/SYS_KNOB_POS_FX/.test(cat), false, `the LLM catalogue does not offer SYS_KNOB_POS_FX${n}`);

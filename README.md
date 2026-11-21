@@ -195,9 +195,7 @@ Under **Advanced**, turn on **Testing tools** to add:
 - Test marks on every control, for tracking what has been confirmed on hardware.
 - **Send CONNECT** and **Read state** for re-running the handshake or re-reading
   the headphones by hand.
-- **Effect level dials**, the Katana-style shared level knobs. These do nothing
-  useful on the WAZA-AIR as far as anyone has worked out, and WazaMate never
-  writes them, so they are off by default.
+
 
 ## Building from source
 

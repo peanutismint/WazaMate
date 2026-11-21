@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.21. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.22. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -76,8 +76,7 @@ function resetBuffers(preview) {
     else putRaw(p, Number(p.init) + p.ofs);
   }
   if (preview) { // a few things switched on so the preview is not all grey
-    for (const [id, v] of [['ODDS_SW', 1], ['DLY_SW', 1], ['REVERB_SW', 1], ['NS1_SW', 1], ['SYS_KNOB_POS_FX1', 17], ['SYS_KNOB_POS_FX2', 17],
-      ['SYS_KNOB_POS_FX3', 21], ['SYS_LED_STATE_FX1', 1], ['SYS_LED_STATE_FX2', 2], ['SYS_LED_STATE_FX3', 1], ['SYS_FXSEL_STATE_FX1', 1], ['SYS_FXSEL_STATE_FX2', 1], ['SYS_FXSEL_STATE_FX3', 1], ['SEND_RETURN_MODE', 1]]) putRaw(P[id], v);
+    for (const [id, v] of [['ODDS_SW', 1], ['DLY_SW', 1], ['REVERB_SW', 1], ['NS1_SW', 1], ['SYS_LED_STATE_FX1', 1], ['SYS_LED_STATE_FX2', 2], ['SYS_LED_STATE_FX3', 1], ['SYS_FXSEL_STATE_FX1', 1], ['SYS_FXSEL_STATE_FX2', 1], ['SYS_FXSEL_STATE_FX3', 1], ['SEND_RETURN_MODE', 1]]) putRaw(P[id], v);
   }
 }
 const patchName = () => String.fromCharCode(...buf.patch.slice(0, 16)).replace(/[^\x20-\x7e]/g, '').trim();
@@ -368,9 +367,13 @@ const nice = id => P[id].label.replace(/^(FX_WAH_|SYS_)/, '').replace(/_/g, ' ')
 const kindOf = id => { const o = optionList(id), p = P[id]; return o ? 'select' : (p.min === 0 && p.max === 1) ? 'toggle' : 'knob'; };
 
 /* ------------------------------------------------------------ preset library (kept in this browser, shareable as files) */
-const PRESET_IDS = PARAMS.filter(p => p.bytes !== 16 && (p.scope === 'patch' || /^SYS_KNOB_POS_/.test(p.id))).map(p => p.id);
-// System parameters resent after a whole-patch push. The three effect dials are left out on purpose, see sendWholePatch.
-const SYSTEM_SEND_IDS = PRESET_IDS.filter(id => P[id].scope === 'system' && !/^SYS_KNOB_POS_FX[123]$/.test(id));
+// The three effect dials (00 00 04 27-29) are left out everywhere. They mirror a
+// Katana panel knob the WAZA-AIR does not have, and writing one makes the hardware
+// pick a single effect of a pair and mute the other. Untouched, all six slots are
+// independent. WazaMate neither stores nor sends them; the log still names them.
+const PRESET_IDS = PARAMS.filter(p => p.bytes !== 16 && (p.scope === 'patch' || (/^SYS_KNOB_POS_/.test(p.id) && !/_FX[123]$/.test(p.id)))).map(p => p.id);
+// System parameters resent after a whole-patch push: the amp's own knobs, and nothing else.
+const SYSTEM_SEND_IDS = PRESET_IDS.filter(id => P[id].scope === 'system');
 let lib = [];
 try { lib = JSON.parse(localStorage.getItem('wazamate.presets') || '[]'); } catch (e) { }
 const saveLib = () => { try { localStorage.setItem('wazamate.presets', JSON.stringify(lib)); } catch (e) { toast('Could not save presets in this browser.'); } };
@@ -394,10 +397,6 @@ function sendWholePatch(what) { // pushes the whole edit buffer to the headphone
     tx(dt1(unabs(abs([0x60, 0, 0, 0]) + o), Array.from(buf.patch.slice(o, e))), 'Patch bytes ' + o + ' to ' + (e - 1));
     o = e;
   }
-  // The three effect dials (04 27-29) are deliberately not sent. Writing one points the
-  // hardware at a single effect of its pair and silences the other, so a stale value here
-  // switched blocks off about half a second after every patch load. Left alone, the
-  // headphones manage the balance themselves and all six slots stay audible.
   for (const pid of SYSTEM_SEND_IDS) {
     if (pid === 'SYS_KNOB_POS_VOLUME' && state.muted) continue;
     tx(dt1(addrOf(P[pid]), [rawOf(P[pid])]), nice(pid));
@@ -478,7 +477,7 @@ function changedParams() {
 }
 
 function llmPrompt(wanted) {
-  const skip = /^(KNOBPOS|SYS_LED|SYS_FXSEL|SYS_KNOB_POS_FX[123]$|FXBOX_SEL|PEDAL_FX|EV1WL)|_HARM_\d/;
+  const skip = /^(KNOBPOS|SYS_LED|SYS_FXSEL|FXBOX_SEL|PEDAL_FX|EV1WL)|_HARM_\d/;
   // FX2 and Delay 2 repeat the same parameters under another prefix, so describe them once.
   const mirrored = /^(FX:|DELAY2)/;
   const lines = [], byGroup = new Map();
@@ -734,29 +733,57 @@ function coerce(id, v) {
   }
   return { why: id + ' was ' + JSON.stringify(v) + ', which is not a number' };
 }
+/** Pulls one preset out of parsed JSON, reporting anything it could not use. */
+function readPreset(src) {
+  if (!src || typeof src.params !== 'object' || !src.params) return null;
+  const params = {}, skipped = [], notes = [];
+  for (const key in src.params) {
+    if (!P[key] || !PRESET_IDS.includes(key)) { skipped.push(key + ' is not a parameter on this amp'); continue; }
+    const r = coerce(key, src.params[key]);
+    if (r.why) { skipped.push(r.why); continue; }
+    if (r.note) notes.push(r.note);
+    params[key] = r.value;
+  }
+  if (!Object.keys(params).length) return null;
+  return { name: cleanName(src.name) || 'Imported', params, applied: Object.keys(params).length, skipped, notes };
+}
+function sayReport(r) {
+  for (const line of r.skipped) log('er', null, 'Ignored: ' + line);
+  for (const line of r.notes) log('rx', null, line);
+}
+/** Loads a patch to play with, without putting it in the library. Nothing is kept
+ *  until the user saves it, so trying ten sounds from an LLM leaves no litter. */
+function tryPatch(d) {
+  try {
+    if (!d) throw new Error('no patch JSON found in that text');
+    if (d.format !== 'wazamate-presets' || !Array.isArray(d.presets)) throw new Error('not a WazaMate patch');
+    const r = readPreset(d.presets[0]);
+    if (!r) throw new Error('nothing usable in that patch');
+    applyParams(r.params); setNameBytes(r.name);
+    state.preset = null;
+    sendWholePatch('"' + r.name + '"');
+    render();
+    sayReport(r);
+    toast('"' + r.name + '" is playing. Nothing is saved yet, use the save button to keep it.'
+      + (r.skipped.length ? ' ' + r.skipped.length + ' setting' + (r.skipped.length > 1 ? 's were' : ' was') + ' ignored.' : ''));
+    return r;
+  } catch (e) { toast('Could not load that patch: ' + (e.message || e)); return null; }
+}
+/** Import from a file, which does add to the library: that is what importing a file is for. */
 function importData(d) {
   try {
     if (!d) throw new Error('no preset JSON found in that text');
     if (d.format !== 'wazamate-presets' || !Array.isArray(d.presets)) throw new Error('not a WazaMate preset file');
     let n = 0, last = null, report = null;
     for (const src of d.presets.slice(0, 500)) {
-      if (!src || typeof src.params !== 'object' || !src.params) continue;
-      const params = {}, skipped = [], notes = [];
-      for (const key in src.params) {
-        if (!P[key] || !PRESET_IDS.includes(key)) { skipped.push(key + ' is not a parameter on this amp'); continue; }
-        const r = coerce(key, src.params[key]);
-        if (r.why) { skipped.push(r.why); continue; }
-        if (r.note) notes.push(r.note);
-        params[key] = r.value;
-      }
-      if (!Object.keys(params).length) continue;
-      last = { id: newId(), name: cleanName(src.name) || 'Imported', params }; lib.push(last); n++;
-      report = { applied: Object.keys(params).length, skipped, notes };
+      const r = readPreset(src);
+      if (!r) continue;
+      last = { id: newId(), name: r.name, params: r.params }; lib.push(last); n++;
+      report = r;
     }
     if (!n) throw new Error('no usable presets in the file');
     saveLib(); state.preset = last.id; presetLoad(last.id);
-    for (const line of report.skipped) log('er', null, 'Ignored: ' + line);
-    for (const line of report.notes) log('rx', null, line);
+    sayReport(report);
     toast('Imported ' + n + ' preset' + (n > 1 ? 's' : '') + '. "' + last.name + '" is loaded now.'
       + (report.skipped.length ? ' ' + report.skipped.length + ' setting' + (report.skipped.length > 1 ? 's were' : ' was') + ' ignored.' : ''));
     return report;
@@ -876,19 +903,18 @@ function llmCreate() {
       // Everything the model wrote except the JSON block is its reasoning, which is the useful part.
       reason.textContent = text.replace(/```[\s\S]*?```/g, '').replace(/\{"format"[\s\S]*\}/, '')
         .replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#{1,6}\s*/gm, '').replace(/\n{3,}/g, '\n\n').trim();
-      const before = lib.length;
-      const report = importData(data);
-      if (lib.length === before) throw new Error('That patch could not be loaded. See the message above.');
+      const report = tryPatch(data);
+      if (!report) throw new Error('That patch could not be loaded. See the message above.');
       // If part of the reply could not be used, say so here rather than leaving
       // the blocks it named sitting at their old settings with no explanation.
-      if (report && report.skipped.length) {
+      if (report.skipped.length) {
         reason.append(h('p', { class: 'warn' }, report.skipped.length + ' of its settings could not be used, so those blocks kept what they had:'),
           h('ul', { class: 'warn' }, report.skipped.slice(0, 8).map(t => h('li', {}, t))),
           h('p', { class: 'warn' }, 'Asking again often fixes it, or say which block to correct.'));
       }
-      status.textContent = report && report.skipped.length
-        ? 'Loaded, with ' + report.skipped.length + ' setting' + (report.skipped.length > 1 ? 's' : '') + ' ignored.'
-        : 'Loaded and playing. Ask for a change, or keep it.';
+      status.textContent = report.skipped.length
+        ? 'Playing, with ' + report.skipped.length + ' setting' + (report.skipped.length > 1 ? 's' : '') + ' ignored. Nothing is saved yet.'
+        : 'Playing. Ask for a change, or save it with the save button when you like it.';
       want.disabled = false;
       want.value = '';
       want.placeholder = 'Now ask for a change, for example: give it more delay, or make it darker';
@@ -919,7 +945,7 @@ function llmCreate() {
     reason.textContent = ''; status.textContent = ''; buttonRow(...firstButtons()); want.focus();
   }
   box.append(h('h2', {}, 'New patch from an LLM'),
-    h('p', {}, 'Describe the sound you are after. A song, a player, an era, or just the feel of it. Once it answers you can keep asking for changes, and it remembers what it built.'),
+    h('p', {}, 'Describe the sound you are after. A song, a player, an era, or just the feel of it. Each answer starts playing so you can hear it, and nothing is saved until you press the save button. Keep asking for changes and it remembers what it built.'),
     want, status, reason, buttons);
   buttonRow(...firstButtons());
   $('#llm').addEventListener('close', stop, { once: true });
@@ -932,11 +958,11 @@ function pasteImport() {
   box.textContent = '';
   const area = h('textarea', { class: 'pastebox', rows: '10', placeholder: 'Paste the whole reply here, explanation and all. The patch will be pulled out of it.', 'aria-label': 'Paste an LLM reply' });
   box.append(h('h2', {}, 'Paste a patch from an LLM'),
-    h('p', {}, 'Paste the entire reply, including anything it wrote around the JSON. Whatever it chose will load straight away, so you can hear it before saving.'),
+    h('p', {}, 'Paste the entire reply, including anything it wrote around the JSON. Whatever it chose starts playing straight away. Nothing goes into your library until you save it.'),
     area,
     h('div', { class: 'prow' },
       h('button', { class: 'btn', type: 'button', onclick: () => $('#help').close() }, 'Cancel'),
-      h('button', { class: 'btn primary', type: 'button', onclick: () => { const t = area.value; $('#help').close(); if (t.trim()) importData(extractJson(t)); } }, 'Load this patch')));
+      h('button', { class: 'btn primary', type: 'button', onclick: () => { const t = area.value; $('#help').close(); if (t.trim()) tryPatch(extractJson(t)); } }, 'Load this patch')));
   $('#help').showModal();
   area.focus();
 }
@@ -1134,7 +1160,7 @@ function tempoBar(b) {
 /* ------------------------------------------------------------ controls */
 let R = {};
 const reg = (id, fn) => { (R[id] = R[id] || []).push(fn); fn(); };
-function notify(id) { (R[id] || []).forEach(f => f()); if (STRUCT.has(id)) scheduleRender(); else if (/^SYS_KNOB_POS_FX|^SEND_RETURN_MODE$/.test(id)) renderChain(); }
+function notify(id) { (R[id] || []).forEach(f => f()); if (STRUCT.has(id)) scheduleRender(); else if (id === 'SEND_RETURN_MODE') renderChain(); }
 function vknob(o) { // o: label,min,max,get,set,fmt,ids[],stId,zero,big
   const el = h('div', { class: 'ctl knob' + (o.big ? ' big' : ''), tabindex: 0, role: 'slider', 'aria-label': o.label, 'data-st': o.stId ? statusOf(o.stId) : 'ok' });
   const val = h('div', { class: 'k-val' }), lab = h('div', { class: 'k-lab' }, o.label);
@@ -1190,12 +1216,12 @@ function swButton(id, cls, label) { // footswitch or power button bound to an ef
 
 /* ------------------------------------------------------------ blocks */
 const SLOTS = {
-  booster: { label: 'Stomp', cat: 'drive', sw: 'ODDS_SW', type: 'ODDS_TYPE', asg: 'FX1A', button: 1, half: 'low', groups: ['BOOSTER'] },
-  mod: { label: 'Mod 1', cat: 'mod', sw: 'FX1_SW', type: 'FX1_FXTYPE', asg: 'FX1B', button: 1, half: 'high', prefix: 'MOD' },
-  delay: { label: 'Delay 1', cat: 'delay', sw: 'DLY_SW', type: 'DLY_TYPE', asg: 'FX2A', button: 2, half: 'low', prefix: 'DELAY' },
-  fx: { label: 'Mod 2', cat: 'mod', sw: 'FX2_SW', type: 'FX2_FXTYPE', asg: 'FX2B', button: 2, half: 'high', prefix: 'FX' },
-  reverb: { label: 'Reverb', cat: 'reverb', sw: 'REVERB_SW', type: 'REVERB_TYPE', asg: 'FX3A', selId: 'FXBOX_SEL_FX3', button: 3, half: 'single', groups: ['REVERB'] },
-  delay2: { label: 'Delay 2', cat: 'delay', sw: 'DLY2_SW', type: 'DLY2_TYPE', asg: 'FX3B', selId: 'FXBOX_SEL_FX3', button: 3, half: 'single', prefix: 'DELAY2' },
+  booster: { label: 'Stomp', cat: 'drive', sw: 'ODDS_SW', type: 'ODDS_TYPE', asg: 'FX1A', groups: ['BOOSTER'] },
+  mod: { label: 'Mod 1', cat: 'mod', sw: 'FX1_SW', type: 'FX1_FXTYPE', asg: 'FX1B', prefix: 'MOD' },
+  delay: { label: 'Delay 1', cat: 'delay', sw: 'DLY_SW', type: 'DLY_TYPE', asg: 'FX2A', prefix: 'DELAY' },
+  fx: { label: 'Mod 2', cat: 'mod', sw: 'FX2_SW', type: 'FX2_FXTYPE', asg: 'FX2B', prefix: 'FX' },
+  reverb: { label: 'Reverb', cat: 'reverb', sw: 'REVERB_SW', type: 'REVERB_TYPE', asg: 'FX3A', selId: 'FXBOX_SEL_FX3', groups: ['REVERB'] },
+  delay2: { label: 'Delay 2', cat: 'delay', sw: 'DLY2_SW', type: 'DLY2_TYPE', asg: 'FX3B', selId: 'FXBOX_SEL_FX3', prefix: 'DELAY2' },
   amp: { label: 'Amp', cat: 'amp', type: 'SYS_KNOB_POS_TYPE' },
   eq: { label: 'EQ', cat: 'eq', sw: 'EQ_SW', groups: ['EQ'] },
   ns: { label: 'Noise gate', cat: 'dyn', sw: 'NS1_SW', groups: ['NOISE_SUPPRESSOR'] },
@@ -1230,12 +1256,6 @@ const ICON = {
   amb: '<circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="5"/><circle cx="20" cy="9" r="1.2" fill="currentColor"/>',
 };
 const svg = (name, extra = '') => `<svg viewBox="0 0 24 24" ${extra}>${ICON[name]}</svg>`;
-function dial(button) { // decode an effect knob position (Roland's editor: 0 and 52 are OFF, 1-51 first effect, 53-103 second effect)
-  const raw = get('SYS_KNOB_POS_FX' + button);
-  if (button === 3) return raw <= 0 ? { half: 'off', level: 0 } : { half: 'single', level: raw - 1 };
-  if (raw === 0 || raw === 52) return { half: 'off', level: 0 };
-  return raw < 52 ? { half: 'low', level: raw - 1 } : { half: 'high', level: raw - 53 };
-}
 
 function tile(b) {
   const s = SLOTS[b], on = s.sw ? !!get(s.sw) : b === 'amb' ? get('SEND_RETURN_MODE') > 0 : true;
@@ -1368,17 +1388,6 @@ function typeCard(b) {
   const c = h('div', { class: 'card ctl', 'data-st': statusOf(s.type) }, h('h3', {}, b === 'amp' ? 'Amp type' : s.label + ' type', dotEl(s.type)), grid);
   return c;
 }
-function amountCard(b) { // how much of this effect is mixed in. The headphones store it as one value per pair of effects (00 00 04 27, 28, 29).
-  const s = SLOTS[b], n = s.button, kid = 'SYS_KNOB_POS_FX' + n, max = n === 3 ? 100 : 50;
-  const other = { booster: 'mod', mod: 'booster', delay: 'fx', fx: 'delay' }[b];
-  const mine = () => { const d = dial(n); return d.half === s.half ? d.level : 0; };
-  const note = h('div', { class: 'note' });
-  const lvl = vknob({ label: 'AMOUNT', min: 0, max, get: mine, set: v => set(kid, n === 3 ? 1 + v : s.half === 'high' ? 53 + v : 1 + v), fmt: v => { const d = dial(n); return d.half === s.half ? String(v) : 'OFF'; }, ids: [kid], stId: kid });
-  reg(kid, () => { const d = dial(n); note.textContent = d.half === s.half ? '' : d.half === 'off' || !other ? 'Currently off.' : 'Currently off. The amount is set on ' + SLOTS[other].label + ' instead, the two share one setting.'; });
-  const card = h('div', { class: 'card' }, h('h3', {}, s.label + ' amount'), h('div', { class: 'hprow' }, lvl, h('div', { style: 'flex:1' }, note, h('button', { class: 'btn', type: 'button', onclick: () => set(kid, 0) }, 'Off'))));
-  if (n === 3) { const col = 'GRY'[get('FXBOX_SEL_FX3')] || 'G'; card.append(h('div', { class: 'srow', style: 'justify-content:flex-start' }, selectCtl('FXBOX_FX3_LAYER_' + col, 'AMOUNT CONTROLS'))); }
-  return card;
-}
 function legendCard() {
   const row = (st, t) => h('span', {}, h('b', { class: 'dot', 'data-st': st, style: 'cursor:default;margin:0' }), t);
   return h('div', { class: 'card legend' }, row('ok', 'Tested on your headphones'), row('untested', "From Roland's map, not tested yet"), row('flag', 'Tested, behaved oddly or you marked it wrong'),
@@ -1398,7 +1407,6 @@ function renderDetail() {
   if ((b === 'mod' || b === 'fx') && !paramsFor(b).length) main.append(h('p', { style: 'color:var(--mute)' }, 'Roland\'s map has no parameters for this type.'));
   if (b === 'sys') side.append(h('div', { class: 'card', style: 'font-size:13px;color:var(--mute)' }, 'Settings outside the signal chain. None of these have been tested on your headphones yet.'));
   if (s.type) side.append(typeCard(b));
-  if (state.dials && s.button) side.append(amountCard(b));
   if (state.tools) side.append(legendCard());
 }
 let rq = 0;
@@ -1543,14 +1551,12 @@ const UI_ICON = {
 };
 function init() {
   for (const e of document.querySelectorAll('[data-ic]')) e.insertAdjacentHTML('afterbegin', `<svg class="uic" viewBox="0 0 24 24" aria-hidden="true">${UI_ICON[e.dataset.ic]}</svg>`);
-  try { state.dials = localStorage.getItem('wazamate.dials') === '1'; state.tools = localStorage.getItem('wazamate.tools') === '1'; state.div = JSON.parse(localStorage.getItem('wazamate.divs') || '{}'); } catch (e) { }
+  try { state.tools = localStorage.getItem('wazamate.tools') === '1'; state.div = JSON.parse(localStorage.getItem('wazamate.divs') || '{}'); } catch (e) { }
   $('#battery').hidden = true;
   if (!navigator.bluetooth) $('#sync').addEventListener('click', () => showHelp('browser'));
   resetBuffers(true);
   $('#tools').checked = state.tools;
   $('#tools').addEventListener('change', e => { state.tools = e.target.checked; try { localStorage.setItem('wazamate.tools', state.tools ? '1' : '0'); } catch (err) { } setSync(state.sync); render(); });
-  $('#dials').checked = state.dials;
-  $('#dials').addEventListener('change', e => { state.dials = e.target.checked; try { localStorage.setItem('wazamate.dials', state.dials ? '1' : '0'); } catch (err) { } render(); });
   document.addEventListener('click', e => { for (const m of [$('#adv'), $('#pmenu'), $('#smenu')]) if (m.open && !m.contains(e.target)) m.open = false; });
   $('#connect').addEventListener('click', connect);
   $('#preset').addEventListener('change', e => presetLoad(e.target.value));

@@ -139,30 +139,21 @@ does not describe them to an LLM. They modelled a physical knob the headphones
 do not have, and one value standing for two effects made every other level
 control harder to reason about.
 
-**Do not write these.** Confirmed 18 Nov 2026, from two observations that
-looked contradictory until the cause turned up:
+**Do not write these, and do not store them.** Confirmed over 18 to 20 Nov 2026:
 
-- Writing a dial does gate. With stomp and mod 1 both switched on and mod 1 set
-  to tremolo, writing `1A` to `00 00 04 27` silenced the tremolo, and `4E`
-  silenced the stomp.
-- Yet all six slots sound together in ordinary use, stomp with mod 1 and delay 1
-  with mod 2 included, as long as nothing writes these addresses.
+- All six effect slots are independent in ordinary use. Stomp with mod 1, and
+  delay 1 with mod 2, are audible together as long as nothing writes these
+  addresses.
+- Writing one forces the hardware to a single effect of its pair and mutes the
+  other. With stomp and mod 1 both on and mod 1 set to tremolo, writing `1A` to
+  `00 00 04 27` silenced the tremolo and `4E` silenced the stomp.
 
-Left alone, the headphones balance a pair themselves. A write forces the dial to
-one effect and mutes the other, and it stays forced.
-
-This caused a real bug. `sendWholePatch` finished every patch load by resending
-the system knobs, these three among them, carrying whatever the previous patch
-had left in the buffer. About half a second after a load, which is how long the
-patch burst takes to drain, blocks the patch had switched on went silent and
-reported themselves off. It showed up most clearly on LLM patches, where a
-freshly chosen mod or second delay would set itself up and then disable itself.
-
-From v0.17 a patch push skips `00 00 04 27` to `29`, with a test to keep them
-out, and the dial has no control unless **Advanced, Effect level dials** is
-switched on. The values are still read and kept in presets, just never sent.
-
-Still open: what `FXBOX_SEL_FX3` does, which only reverb and delay 2 carry.
+This is the same shape as the FXBOX block below: Katana panel state that the
+firmware maintains for itself, which does harm only when an editor writes it
+back. Two separate bugs came from exactly that, so from v0.22 WazaMate does not
+store these in presets, does not send them, offers no control for them and does
+not describe them to an LLM. They are still decoded in the log, so an incoming
+one is named rather than showing as a bare address.
 
 ### The FXBOX block, and why a push must skip it
 
