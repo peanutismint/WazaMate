@@ -18,7 +18,7 @@ const src = p => fs.readFileSync(path.join(root, 'src', p), 'utf8');
 // Load app.js with its data placeholder filled in, then pull out the internals
 // we want to exercise. The file guards its own init() behind a document check.
 let code = src('app.js').replace('/*__DATA__*/null', src('schema.json'));
-code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,coerce,libOrder,P,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
+code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,coerce,libOrder,NO_SEND,lin,P,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
 const mod = { exports: {} };
 new Function('module', 'localStorage', code)(mod, { getItem: () => null });
 const A = mod.exports;
@@ -98,6 +98,20 @@ const fav = (n, f) => ({ id: n, name: n, fav: f });
 const shown = A.libOrder([fav('a', false), fav('b', true), fav('c', false), fav('d', true)]).map(p => p.name);
 is(shown.join(' '), 'b d a c', 'favourites come first, each group in its own order');
 is(A.libOrder([fav('a', false), fav('b', false)]).map(p => p.name).join(' '), 'a b', 'with no favourites the order is untouched');
+
+console.log('\nWhat a whole-patch push leaves alone');
+// The FXBOX block mirrors the Katana's effect buttons. The headphones keep it in
+// step with the effect types, and a stale one written at the end of a push makes
+// them re-derive the type from it: a patch's COMP turned back into CHORUS, PLATE
+// into HALL and DIGITAL into SDE-3000 about two seconds after loading.
+const skipped = id => !!A.NO_SEND[A.lin(A.P[id].addr)];
+for (const id of ['FXBOX_ASGN_FX1B_G', 'FXBOX_ASGN_FX2A_G', 'FXBOX_ASGN_FX3A_G', 'FXBOX_SEL_FX3', 'FXBOX_FX3_LAYER_G']) {
+  is(skipped(id), true, `a push does not write ${id}`);
+}
+// These sit inside the same block and must still go out.
+for (const id of ['CHAIN_PTN', 'POSITION_EQ', 'POSITION_SEND_RETURN', 'FX1_FXTYPE', 'REVERB_TYPE', 'DLY_TYPE']) {
+  is(skipped(id), false, `a push still writes ${id}`);
+}
 
 console.log('\nSchema');
 is(A.PARAMS.length > 500, true, `${A.PARAMS.length} parameters loaded`);

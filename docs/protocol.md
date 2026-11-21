@@ -164,6 +164,37 @@ switched on. The values are still read and kept in presets, just never sent.
 
 Still open: what `FXBOX_SEL_FX3` does, which only reverb and delay 2 carry.
 
+### The FXBOX block, and why a push must skip it
+
+`60 00 12 01` to `12 1E`, apart from `12 00`, `12 17` and `12 18`, holds the
+Katana's effect-button configuration: which effect each half of each button
+picks, for each of the three colour layers, plus the selections. **Confirmed
+20 Nov 2026:** the headphones keep these in step with the effect types by
+themselves, and they also work the other way, so writing one makes them
+re-derive the type from it.
+
+That broke every patch load. `sendWholePatch` walked the buffer in address
+order, so the FXBOX block went out last, carrying assignments left over from
+whatever patch was read at connect. A log of one load shows it plainly:
+
+| Time | What happened |
+| --- | --- |
+| 46.479 | push writes `01 41` = `03`, mod 1 set to COMP |
+| 46.807 | headphones confirm `01 41` = `03` |
+| 46.830 | headphones update `12 04` to `03` on their own |
+| 48.902 | push writes the FXBOX block, `12 04` = `1D`, stale |
+| 48.945 | headphones confirm `12 04` = `1D` |
+| 49.005 | headphones push `01 41` = `1D`, mod 1 is CHORUS again |
+
+The same two seconds turned PLATE back into HALL through `12 0D`, and DIGITAL
+back into SDE-3000 through `12 07`. It looked like the LLM changing its mind,
+because the explanation named the effects it had asked for and the editor
+quietly replaced them.
+
+From v0.21 a push skips every `FXBOX_` byte, with a test to keep them out.
+`CHAIN_PTN`, `POSITION_SEND_RETURN` and `POSITION_EQ` sit inside the same
+address range and are still sent.
+
 ### Chain order
 
 `CHAIN_PTN` at `60 00 12 00` picks where the amp sits:

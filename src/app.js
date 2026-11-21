@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.20. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.21. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -58,6 +58,12 @@ function dotEl(id) {
 const buf = { patch: new Uint8Array(SIZE.patch), system: new Uint8Array(SIZE.system) };
 const owner = { patch: new Array(SIZE.patch), system: new Array(SIZE.system) };
 for (const p of PARAMS) { const o = lin(p.addr); for (let k = 0; k < p.bytes; k++) owner[p.scope][o + k] = p.id; }
+// Patch bytes a whole-patch push must not write. The FXBOX block mirrors the
+// Katana's effect buttons: which effect each button picks, per colour layer. The
+// headphones keep it in step with the effect types themselves, and writing a
+// stale one makes them re-derive the type from it, undoing the type just sent.
+const NO_SEND = new Uint8Array(SIZE.patch);
+for (const p of PARAMS) if (p.scope === 'patch' && /^FXBOX_/.test(p.id)) { const o = lin(p.addr); for (let k = 0; k < p.bytes; k++) NO_SEND[o + k] = 1; }
 const state = { fails: 0, battery: null, bpm: null, div: {}, preset: null, tools: false, head: null, patch: 1, names: [], sel: 'amp', test: false, muted: false, sync: 'preview', progress: 0 };
 function putRaw(p, raw) { const o = lin(p.addr), b = buf[p.scope]; if (p.bytes === 2) { b[o] = (raw >> 7) & 0x7f; b[o + 1] = raw & 0x7f; } else b[o] = raw & 0x7f; }
 function rawOf(p) { const o = lin(p.addr), b = buf[p.scope]; return p.bytes === 2 ? (b[o] << 7) | b[o + 1] : b[o]; }
@@ -240,7 +246,6 @@ async function connect() {
     link.pending.clear(); state.muted = false;
     log('rx', null, 'Bluetooth connected to ' + (dev.name || 'headphones'));
     resetBuffers(false);
-    if (state.tools) $('#logbar').open = true;
     render(); setSync('none');
     await sleep(300); // give the link a moment before the first message
     await sendConnect();
@@ -384,8 +389,8 @@ function presetRename() { const p = curPreset(); if (!p) return toast('Pick a pr
 function presetDelete() { const p = curPreset(); if (!p) return toast('Pick a preset first.'); if (!confirm('Delete "' + p.name + '" from your library? The headphones are not changed.')) return; lib = lib.filter(x => x !== p); state.preset = null; saveLib(); render(); }
 function sendWholePatch(what) { // pushes the whole edit buffer to the headphones. Nothing is stored until "Store in memory".
   for (let o = 0; o < PATCH_SIZE;) { // send every stretch of defined bytes, at most 64 at a time
-    if (!owner.patch[o]) { o++; continue; }
-    let e = o; while (e < PATCH_SIZE && owner.patch[e] && e - o < 64) e++;
+    if (!owner.patch[o] || NO_SEND[o]) { o++; continue; }
+    let e = o; while (e < PATCH_SIZE && owner.patch[e] && !NO_SEND[e] && e - o < 64) e++;
     tx(dt1(unabs(abs([0x60, 0, 0, 0]) + o), Array.from(buf.patch.slice(o, e))), 'Patch bytes ' + o + ' to ' + (e - 1));
     o = e;
   }
@@ -1403,9 +1408,11 @@ let lq = 0;
 function scheduleLog() {
   if (lq) return;
   lq = requestAnimationFrame(() => {
-    lq = 0; const last = logs[logs.length - 1]; $('#lastlog').textContent = last ? last.line : '';
+    lq = 0; const last = logs[logs.length - 1];
+    $('#lastlog').textContent = last ? last.line : 'Nothing yet';
     if (!$('#logbar').open) return;
     const box = $('#log'); box.textContent = '';
+    if (!logs.length) box.append(h('div', { class: 'logempty' }, 'Every message to and from the headphones appears here. Useful if something does not behave, since "Copy log" gives you the whole conversation to send on.'));
     for (const l of logs.slice(-200)) box.append(h('div', { class: l.cls }, l.line));
     box.scrollTop = box.scrollHeight;
   });
@@ -1515,27 +1522,6 @@ async function tunerClosed() { // runs however the dialog closes: button, Escape
   clearTimeout(tuner.idle);
   if (link.connected) await tx(dt1(RUNNING_MODE, [MODE.play]), 'Running mode 0 (play)');
 }
-/** Puts the headphones into their battery and tuner modes briefly, logging whatever they send. */
-async function probeModes() {
-  if (!link.connected) return toast('Connect the headphones first.');
-  if (!confirm('This switches the headphones into their battery mode, then their tuner mode, then back to normal play.\n\nYour sound may cut out for about fifteen seconds. Play and hold a note when the log says to.\n\nNothing is written to any patch. Run it?')) return;
-  const mark = t => log('rx', null, '--------- ' + t + ' ---------');
-  try {
-    mark('probe: battery mode');
-    await tx(dt1(RUNNING_MODE, [3]), 'Running mode 3 (battery)');
-    await sleep(2500);
-    await read(BATTERY_ADDR, 1, 1200);
-    mark('probe: tuner mode, PLAY AND HOLD A NOTE NOW');
-    await tx(dt1(RUNNING_MODE, [1]), 'Running mode 1 (tuner)');
-    await sleep(8000);
-    await read([0x7F, 0x00, 0x03, 0x00], 2, 1200);
-    await sleep(1500);
-  } finally {
-    await tx(dt1(RUNNING_MODE, [0]), 'Running mode 0 (play)');
-    mark('probe finished, back in play mode');
-  }
-  toast('Probe finished. Copy the log and send it over.');
-}
 let toastTimer = null;
 function toast(t) { const e = $('#toast'); e.textContent = t; e.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => e.classList.remove('show'), 4200); }
 function parseHex(s) { const m = s.trim().split(/[\s,]+/).filter(Boolean).map(x => parseInt(x, 16)); return m.length && m.every(n => n >= 0 && n <= 255) ? m : null; }
@@ -1581,9 +1567,9 @@ function init() {
   cs.addEventListener('change', () => { if (!set('CHAIN_PTN', +cs.value)) cs.value = get('CHAIN_PTN'); });
   $('#chainlab').append(dotEl('CHAIN_PTN'));
   $('#logbar').addEventListener('toggle', scheduleLog);
+  scheduleLog(); // draw the bar once on load, so it reads as something to open rather than an empty strip
   $('#sendraw').addEventListener('click', () => { const m = parseHex($('#raw').value); if (!m) return toast('Type hex bytes, for example F0 41 ... F7.'); tx(m, 'Raw message'); });
   $('#senddt1').addEventListener('click', () => { const m = parseHex($('#raw').value); if (!m || m.length < 5 || m.some(n => n > 127)) return toast('Type 4 address bytes and then the data bytes, all 00 to 7F.'); tx(dt1(m.slice(0, 4), m.slice(4)), 'Raw DT1'); });
-  $('#probe').addEventListener('click', probeModes);
   $('#tunerbtn').addEventListener('click', openTuner);
   $('#tclose').addEventListener('click', () => $('#tuner').close());
   $('#tuner').addEventListener('close', tunerClosed);

@@ -172,26 +172,32 @@ Model names change faster than this README. Press **Load models** next to the
 Model box and WazaMate asks the provider which models your key can actually use,
 then lets you pick one. Worth doing on the first run.
 
-If a request fails or just sits there, turn on **Testing tools** under Advanced.
-Every request, reply and failure is written to the same log as the MIDI, with
+If a request fails or just sits there, open the **MIDI log** at the foot of the
+page. Every request, reply and failure is written there alongside the MIDI, with
 timings and sizes, and never your key. A request that gets no reply within
 ninety seconds is dropped rather than left hanging.
 
 If you would rather not hand over a key at all, the copy and paste route does
 exactly the same job with your existing chatbot.
 
+## The MIDI log
+
+The bar at the foot of the page holds every message to and from the headphones.
+Click it to open, click again to collapse. If something misbehaves, **Copy log**
+and sending that over is the fastest way to work out what happened: it carries
+the whole conversation, addresses and all.
+
 ## Advanced
 
-Under **Advanced**, turn on **Testing tools** to get:
+Under **Advanced**, turn on **Testing tools** to add:
 
-- A live MIDI log of every message in and out, with a copy button.
-- A console for sending raw SysEx by hand.
+- A console in the log bar for sending raw SysEx by hand.
 - Test marks on every control, for tracking what has been confirmed on hardware.
 - **Send CONNECT** and **Read state** for re-running the handshake or re-reading
   the headphones by hand.
-
-If something misbehaves, turning this on and copying the log is the fastest way
-to work out what happened.
+- **Effect level dials**, the Katana-style shared level knobs. These do nothing
+  useful on the WAZA-AIR as far as anyone has worked out, and WazaMate never
+  writes them, so they are off by default.
 
 ## Building from source
 
