@@ -18,7 +18,7 @@ const src = p => fs.readFileSync(path.join(root, 'src', p), 'utf8');
 // Load app.js with its data placeholder filled in, then pull out the internals
 // we want to exercise. The file guards its own init() behind a document check.
 let code = src('app.js').replace('/*__DATA__*/null', src('schema.json'));
-code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,coerce,libOrder,RESET_IDS,completePatch,NO_SEND,lin,P,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
+code += ';module.exports={dt1,rq1,wrapBle,BleParser,hex,P,addrOf,PARAMS,paramsFor,resetBuffers,get,putRaw,PRESET_IDS,SYSTEM_SEND_IDS,llmPrompt,coerce,libOrder,neutral,RESET_IDS,completePatch,NO_SEND,lin,P,kindOf,fmt,PATCH_SIZE,decodeTuner,RUNNING_MODE};';
 const mod = { exports: {} };
 new Function('module', 'localStorage', code)(mod, { getItem: () => null });
 const A = mod.exports;
@@ -142,6 +142,17 @@ is(told.includes('- PITCH SHIFTER:'), true, 'each modulation type says what it i
 is(/OCTAVE:.*PITCH SHIFTER/.test(told), true, 'and OCTAVE points at PITCH SHIFTER for anything more');
 is(told.includes('FX1_PITCHSHIFT_PITCH1 -24-24'), true, 'the parameters behind that claim are still listed');
 is(told.length < 15000, true, `the prompt stays under 15 KB (${(told.length / 1024).toFixed(1)})`);
+
+console.log('\nDouble click resets to neutral');
+// For a control that runs either side of zero, neutral is zero, which is not
+// always Roland's stored default.
+is(A.neutral(A.P.FX1_PITCHSHIFT_PITCH1), 0, 'a pitch control resets to no pitch change');
+is(A.neutral(A.P.FX1_PITCHSHIFT_FINE1), 0, 'fine tune resets flat, not to the +10 Roland stores');
+is(A.neutral(A.P.FX1_PITCHSHIFT_FINE2), 0, 'and the second voice too, not to its -10');
+is(A.neutral(A.P.ODDS_BOTTOM), 0, 'the stomp bottom control resets flat');
+// Everything one-sided keeps Roland's default, which is the sensible value there.
+is(A.neutral(A.P.SYS_KNOB_POS_BASS), 50, 'a 0 to 100 control resets to its default, not to 0');
+is(A.neutral(A.P.DLY_COMMON_DLY_TIME), 400, 'and so does delay time');
 
 console.log('\nSchema');
 is(A.PARAMS.length > 500, true, `${A.PARAMS.length} parameters loaded`);

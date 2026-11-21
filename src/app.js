@@ -1,5 +1,5 @@
 'use strict';
-/* WazaMate v0.24. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
+/* WazaMate v0.25. Parameter data below is generated from Roland's own editor files (BTS for WAZA-AIR 1.3.0). */
 const DATA = /*__DATA__*/null;
 const PARAMS = DATA.params.filter(p => p.scope !== 'ev1wl');
 const LABELS = DATA.labels;
@@ -904,8 +904,11 @@ function llmSettings(then) {
 }
 
 function llmCreate() {
+  // Without a key only the Create button is out of reach. Copying the prompt and
+  // pasting a reply need no key at all, and they are the whole point for anyone
+  // who would rather not hand one over, so the dialog opens either way.
   const cfg = llmCfg();
-  if (!cfg || (!cfg.key && cfg.provider !== 'custom')) return llmSettings(llmCreate);
+  const keyed = !!(cfg && (cfg.key || cfg.provider === 'custom'));
   const box = $('#llmbox');
   box.textContent = '';
   const want = h('textarea', { class: 'pastebox', rows: '3', 'aria-label': 'The sound you want',
@@ -985,17 +988,24 @@ function llmCreate() {
     }
   }
   const firstButtons = () => [
-    h('button', { class: 'btn', type: 'button', onclick: () => llmSettings(llmCreate) }, 'Settings'),
     h('button', { class: 'btn', type: 'button', onclick: close }, 'Cancel'),
-    h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Create patch'),
+    keyed ? h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Create patch')
+      : h('button', { class: 'btn primary', type: 'button', onclick: () => llmSettings(llmCreate) }, 'Add a key'),
   ];
   function startFresh() {
     thread = []; want.value = ''; want.placeholder = 'Describe a different sound';
     reason.textContent = ''; status.textContent = ''; buttonRow(...firstButtons()); want.focus();
   }
+  // The other three LLM routes used to be scattered through the preset menu. They
+  // belong with this one, so they sit under the dialog that already does the job.
+  const other = h('div', { class: 'llmalt' },
+    h('button', { class: 'lnk', type: 'button', title: 'Choose which LLM to use and store your API key in this browser', onclick: () => llmSettings(llmCreate) }, 'LLM settings'),
+    h('button', { class: 'lnk', type: 'button', title: 'Copies the whole prompt, so you can paste it into any chatbot instead of using a key', onclick: () => { close(); copyLlmPrompt(); } }, 'Copy the prompt instead'),
+    h('button', { class: 'lnk', type: 'button', title: 'Paste a reply you got elsewhere, explanation and all', onclick: () => { close(); pasteImport(); } }, 'Paste a reply'));
   box.append(h('h2', {}, 'New patch from an LLM'),
     h('p', {}, 'Describe the sound you are after. A song, a player, an era, or just the feel of it. Each answer starts playing so you can hear it, and nothing is saved until you press the save button. Keep asking for changes and it remembers what it built.'),
-    want, status, reason, buttons);
+    want, status, reason, buttons, other);
+  if (!keyed) status.textContent = 'No API key yet, so this cannot build the patch for you. Add one, or copy the prompt and bring a reply back, which needs no key.';
   buttonRow(...firstButtons());
   $('#llm').addEventListener('close', stop, { once: true });
   $('#llm').showModal();
@@ -1211,7 +1221,8 @@ let R = {};
 const reg = (id, fn) => { (R[id] = R[id] || []).push(fn); fn(); };
 function notify(id) { (R[id] || []).forEach(f => f()); if (STRUCT.has(id)) scheduleRender(); else if (id === 'SEND_RETURN_MODE') renderChain(); }
 function vknob(o) { // o: label,min,max,get,set,fmt,ids[],stId,zero,big
-  const el = h('div', { class: 'ctl knob' + (o.big ? ' big' : ''), tabindex: 0, role: 'slider', 'aria-label': o.label, 'data-st': o.stId ? statusOf(o.stId) : 'ok' });
+  const el = h('div', { class: 'ctl knob' + (o.big ? ' big' : ''), tabindex: 0, role: 'slider', 'aria-label': o.label, 'data-st': o.stId ? statusOf(o.stId) : 'ok',
+    title: 'Drag up and down to change, hold Shift for fine steps' + (o.init != null ? ', double click to reset' : '') });
   const val = h('div', { class: 'k-val' }), lab = h('div', { class: 'k-lab' }, o.label);
   if (o.stId) lab.append(dotEl(o.stId));
   el.append(h('div', { class: 'k-dial' }, h('div', { class: 'k-ring' }), h('div', { class: 'k-cap' }, h('i'))), val, lab);
@@ -1241,7 +1252,12 @@ function vknob(o) { // o: label,min,max,get,set,fmt,ids[],stId,zero,big
   });
   return el;
 }
-const knob = (id, o = {}) => { const p = P[id]; return vknob({ label: o.label || nice(id), min: p.min, max: p.max, get: () => get(id), set: v => set(id, v), fmt: v => fmt(id, v), ids: [id], stId: id, zero: p.ofs > 0 ? 0 : null, init: Number(p.init), big: o.big }); };
+// Double click puts a control back to neutral. For anything that runs either side of
+// zero that means zero, which is not always what Roland stores as the default: the two
+// pitch shifter fine-tune controls sit at +10 and -10 for a gentle detune, and the
+// stomp's bottom control at +10. Resetting should flatten them, not restore the tilt.
+const neutral = p => (p.min < 0 && p.max > 0 ? 0 : Number(p.init));
+const knob = (id, o = {}) => { const p = P[id]; return vknob({ label: o.label || nice(id), min: p.min, max: p.max, get: () => get(id), set: v => set(id, v), fmt: v => fmt(id, v), ids: [id], stId: id, zero: p.ofs > 0 ? 0 : null, init: neutral(p), big: o.big }); };
 function selectCtl(id, label) {
   const p = P[id], s = h('select', { 'aria-label': label || nice(id) });
   for (const [v, t] of optionList(id)) s.append(h('option', { value: v }, t));
@@ -1610,7 +1626,8 @@ function init() {
   $('#connect').addEventListener('click', connect);
   $('#preset').addEventListener('change', e => presetLoad(e.target.value));
   $('#psave').addEventListener('click', presetSave);
-  const acts = { pnew: presetNew, pinit: presetInit, plib: libManage, pdup: presetDuplicate, pren: presetRename, pdel: presetDelete, pexp: () => presetExport(false), pexpall: () => presetExport(true), pimp: () => $('#pfile').click(), pbackup: backupMemories, pllm: copyLlmPrompt, ppaste: pasteImport, pgen: llmCreate, pllmset: llmSettings };
+  const acts = { pnew: presetNew, pinit: presetInit, plib: libManage, pdup: presetDuplicate, pren: presetRename, pdel: presetDelete,
+    pexp: () => presetExport(false), pexpall: () => presetExport(true), pimp: () => $('#pfile').click(), pbackup: backupMemories, pgen: llmCreate };
   for (const k in acts) $('#' + k).addEventListener('click', () => { $('#pmenu').open = false; acts[k](); });
   $('#pfile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) presetImport(f); });
   $('#mute').addEventListener('click', toggleMute);

@@ -155,20 +155,14 @@ a factory reset on the headphones themselves.
 
 ## Connecting an LLM
 
-Under the preset menu, **LLM settings**. Your key is kept in this browser and
-sent straight to the provider you choose. WazaMate has no server, so it never
-sees your key or your request, and neither does anyone else.
+The spark button in the preset bar opens it. Describe a sound, and the patch it
+builds starts playing straight away.
 
-| Provider | Works from a web page | Notes |
-| --- | --- | --- |
-| **Google Gemini** | Yes | Free tier, the one to start with |
-| OpenRouter | Yes | One key, many models, some free |
-| Anthropic Claude | Yes | Paid |
-| Groq | Unconfirmed | Generous free tier, but may come back blocked |
-| Anything OpenAI-compatible | Depends | A local model, or a proxy of your own |
-| **OpenAI / ChatGPT** | **No** | Refuses browser calls outright, no key can fix it |
+That dialog is also where the other two routes live, along the bottom. **Copy
+the prompt instead** puts the whole thing on your clipboard for any chatbot, and
+**Paste a reply** takes the answer back. Neither needs a key, so the whole
+feature works without handing one over.
 
-Model names change faster than this README. Press **Load models** next to the
 Model box and WazaMate asks the provider which models your key can actually use,
 then lets you pick one. Worth doing on the first run.
 
@@ -189,6 +183,13 @@ can work through ten ideas and keep the one you like.
 
 If you would rather not hand over a key at all, the copy and paste route does
 exactly the same job with your existing chatbot.
+
+## Knobs
+
+Drag a knob up and down to change it, hold Shift for fine steps, and double
+click to put it back to neutral. For a control that runs either side of zero,
+such as a pitch or a tone cut, that means zero; for everything else it means the
+value the WAZA-AIR ships with.
 
 ## The MIDI log
 

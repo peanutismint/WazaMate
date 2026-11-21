@@ -388,3 +388,8 @@ button.batt{background:none;color:inherit;cursor:pointer}
   .libfoot .libcount{width:100%;margin:0 0 4px}
 }
 
+/* ---------- the other LLM routes, under the describe-a-sound dialog ---------- */
+.llmalt{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.lnk{background:none;border:0;padding:2px 0;color:var(--mute);font:13px var(--font);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:#3a3f4a}
+.lnk:hover{color:#9fd0ff;text-decoration-color:currentColor}
+
